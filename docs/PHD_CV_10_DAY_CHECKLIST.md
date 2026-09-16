@@ -47,7 +47,7 @@ and explained rigorously.
 ### Tasks
 
 - [x] Review `.gitignore` and confirm that only generated/private files are ignored.
-- [x] Add the real `src/`, `tests/`, `scripts/`, and `docs/` files to version control.
+- [x] Add the real package, tests, configuration, and documentation to version control.
 - [x] Add `pyproject.toml` with project metadata and Python version constraints.
 - [x] Add separate runtime and development dependencies.
 - [x] Generate and commit a reproducible dependency lockfile.
@@ -70,11 +70,19 @@ and explained rigorously.
 - Immutable smoke configuration: `configs/smoke/v1.toml`, pinned to a specific
   model and tokenizer revision.
 - Frozen protocol: `research/protocol_v1.md`.
-- Local quality gate: compilation passed, baseline CLI help passed, Ruff format
-  and lint passed, MyPy passed for the five typed core modules, all 27 tests
-  passed, and `git diff --check` passed.
-- MyPy scope will expand to the model-specific experiment adapters during the
-  cache-interface work on Days 2–3.
+- Local quality gate passed from a clean clone. The active `amt` package is
+  fully included in MyPy; superseded proxy experiments were removed during the
+  post-Day-1 repository cleanup.
+
+### Post-foundation cleanup
+
+- Completed: 2026-09-16.
+- Consolidated the retained baseline, fixed policies, reporting, and config
+  loading into one installable `amt` package and CLI.
+- Removed the duplicate requirements file, wrappers, stale planning documents,
+  and proxy experiment modules that could not support the registered claims.
+- Verified a locked isolated install, CLI startup, compilation, formatting,
+  linting, full-package MyPy, documentation links, and all 12 focused tests.
 
 ## Day 2 — Reference decoding oracle
 
@@ -249,7 +257,7 @@ and explained rigorously.
 - [ ] Report confidence intervals and sample counts.
 - [ ] Include negative results and fixed-policy wins.
 - [ ] Update the README with exact reproduction commands.
-- [ ] Update `docs/IMPLEMENTATION_CHECKLIST.md` honestly.
+- [ ] Update the README, roadmap, protocol, and this checklist honestly.
 - [ ] Write a concise limitations and threats-to-validity section.
 - [ ] Write a 4–6 page technical report or extended research note.
 - [ ] Add a clear repository status: prototype, validated pilot, or confirmatory study.

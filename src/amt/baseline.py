@@ -1,13 +1,11 @@
-# Full-cache inference baseline with timing, memory, and hardware metadata.
+"""Full-cache inference baseline with timing, memory, and hardware metadata."""
+
 from __future__ import annotations
 
-import json
 import platform
-import sys
 import time
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Literal, Protocol, Sequence, cast
 
 import torch
@@ -25,7 +23,6 @@ class _TokenizedInputs(Mapping[str, torch.Tensor]):
     def to(self, *args: object, **kwargs: object) -> "_TokenizedInputs":
         del args, kwargs
         return self
-        # Preserve the typed token mapping for the baseline runner.
 
 
 class _Tokenizer(Protocol):
@@ -39,7 +36,12 @@ class _Tokenizer(Protocol):
 
 
 class _TokenizerFactory(Protocol):
-    def from_pretrained(self, pretrained_model_name_or_path: str) -> _Tokenizer: ...
+    def from_pretrained(
+        self,
+        pretrained_model_name_or_path: str,
+        *,
+        revision: str | None = None,
+    ) -> _Tokenizer: ...
 
 
 class _CausalLM(Protocol):
@@ -83,7 +85,12 @@ class _ModelOutput(Protocol):
 
 
 class _ModelFactory(Protocol):
-    def from_pretrained(self, pretrained_model_name_or_path: str) -> _CausalLM: ...
+    def from_pretrained(
+        self,
+        pretrained_model_name_or_path: str,
+        *,
+        revision: str | None = None,
+    ) -> _CausalLM: ...
 
 
 class _ModelConfig(Protocol):
@@ -104,8 +111,10 @@ class _CudaModule(Protocol):
 
 @dataclass
 class BaselineResult:
+    experiment_id: str
     model_name: str
     model_revision: str | None
+    tokenizer_revision: str | None
     prompt: str
     seed: int
     max_new_tokens: int
@@ -133,20 +142,16 @@ class BaselineResult:
     gpu_total_memory_mb: float | None
     cuda_version: str | None
     model_config: dict[str, int | None]
-    cuda_device_name: str | None
 
     def to_dict(self) -> dict[str, object]:
-        # Serialize baseline measurements for JSON output.
         return asdict(self)
 
 
-def _estimate_kv_cache_bytes(model: _CausalLM, seq_len: int) -> int:
+def estimate_kv_cache_bytes(model: _CausalLM, seq_len: int) -> int:
     config = model.config
-    # Estimate cache storage from model dimensions and element size.
     num_layers = config.num_hidden_layers
-    if hasattr(config, "num_key_value_heads"):
-        kv_heads = config.num_key_value_heads
-    else:
+    kv_heads = cast(int | None, getattr(config, "num_key_value_heads", None))
+    if kv_heads is None:
         kv_heads = config.num_attention_heads
 
     head_dim = cast(int | None, getattr(config, "head_dim", None))
@@ -161,13 +166,11 @@ def _estimate_kv_cache_bytes(model: _CausalLM, seq_len: int) -> int:
 def _peak_gpu_memory_mb() -> float:
     if torch.cuda.is_available():
         return float(torch.cuda.max_memory_allocated() / (1024**2))
-    # Read peak allocated GPU memory when CUDA is available.
     return 0.0
 
 
 def _torch_dtype_for_name(dtype_name: str, device: str) -> torch.dtype:
     normalized = dtype_name.lower()
-    # Convert a CLI dtype name into a supported torch dtype.
     mapping: dict[str, torch.dtype] = {
         "float32": torch.float32,
         "fp32": torch.float32,
@@ -189,7 +192,6 @@ def _torch_dtype_for_name(dtype_name: str, device: str) -> torch.dtype:
 def _synchronize_device() -> None:
     if torch.cuda.is_available():
         torch.cuda.synchronize()
-    # Synchronize CUDA before taking timing measurements.
 
 
 def _measure_prefill_and_decode(
@@ -198,7 +200,6 @@ def _measure_prefill_and_decode(
     max_new_tokens: int,
 ) -> tuple[float, float, _Cache]:
     input_ids = inputs["input_ids"]
-    # Measure prompt prefill and autoregressive decode separately.
     attention_mask = inputs.get("attention_mask")
 
     _synchronize_device()
@@ -238,7 +239,6 @@ def _measure_prefill_and_decode(
 def _actual_cache_metadata(cache: _Cache) -> tuple[int, list[dict[str, list[int]]]]:
     cache_bytes = 0
     shapes: list[dict[str, list[int]]] = []
-    # Collect actual cache bytes and tensor shapes from the model cache.
     for layer in cache.layers:
         cache_bytes += layer.keys.numel() * layer.keys.element_size()
         cache_bytes += layer.values.numel() * layer.values.element_size()
@@ -254,7 +254,6 @@ def _actual_cache_metadata(cache: _Cache) -> tuple[int, list[dict[str, list[int]
 def _prompt_for_length(tokenizer: _Tokenizer, prompt: str, target_tokens: int | None) -> str:
     if target_tokens is None:
         return prompt
-    # Expand and truncate a prompt to a requested token length.
 
     prompt_inputs = tokenizer(prompt, return_tensors="pt")
     prompt_ids = prompt_inputs["input_ids"][0]
@@ -267,7 +266,6 @@ def _prompt_for_length(tokenizer: _Tokenizer, prompt: str, target_tokens: int | 
 
 def _model_config_metadata(model: _CausalLM) -> dict[str, int | None]:
     config = model.config
-    # Extract cache-relevant model configuration fields.
     return {
         "num_hidden_layers": cast(int, getattr(config, "num_hidden_layers", None)),
         "num_attention_heads": cast(int, getattr(config, "num_attention_heads", None)),
@@ -279,7 +277,6 @@ def _model_config_metadata(model: _CausalLM) -> dict[str, int | None]:
 
 def _model_revision(model: _CausalLM) -> str | None:
     config = model.config
-    # Return the model revision when the loaded model exposes one.
     revision = getattr(config, "revision", None)
     if revision is not None:
         return str(revision)
@@ -289,23 +286,17 @@ def _model_revision(model: _CausalLM) -> str | None:
 def _gpu_total_memory_mb() -> float | None:
     if not torch.cuda.is_available():
         return None
-    # Read total memory for the active CUDA device.
     device_index = 0
     cuda_module = cast(_CudaModule, torch.cuda)
     props = cuda_module.get_device_properties(device_index)
     return float(props.total_memory / (1024**2))
 
 
-def _save_result(result: BaselineResult, output_dir: Path, run_number: int) -> Path:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    result_path = output_dir / f"baseline_{time.time_ns()}_{run_number:03d}.json"
-    # Write one baseline measurement as a numbered JSON file.
-    result_path.write_text(json.dumps(result.to_dict(), indent=2) + "\n", encoding="utf-8")
-    return result_path
-
-
 def run_full_cache_baseline(
+    experiment_id: str = "manual-baseline",
     model_name: str = DEFAULT_MODEL,
+    model_revision: str | None = None,
+    tokenizer_revision: str | None = None,
     prompt: str = "The future of memory in transformers is",
     max_new_tokens: int = 16,
     device: str | None = None,
@@ -314,19 +305,24 @@ def run_full_cache_baseline(
     dtype: str = "float32",
 ) -> BaselineResult:
     cast(_TorchRandom, torch).manual_seed(seed)
-    # Execute full-cache inference and collect all baseline measurements.
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
     device_name = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch_dtype = _torch_dtype_for_name(dtype, device_name)
 
-    tokenizer = cast(_TokenizerFactory, AutoTokenizer).from_pretrained(model_name)
+    tokenizer = cast(_TokenizerFactory, AutoTokenizer).from_pretrained(
+        model_name,
+        revision=tokenizer_revision or model_revision,
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     prompt = _prompt_for_length(tokenizer, prompt, prompt_length)
 
-    model = cast(_ModelFactory, AutoModelForCausalLM).from_pretrained(model_name)
+    model = cast(_ModelFactory, AutoModelForCausalLM).from_pretrained(
+        model_name,
+        revision=model_revision,
+    )
     model.to(device_name)
     model.to(dtype=torch_dtype)
     model.eval()
@@ -363,12 +359,14 @@ def run_full_cache_baseline(
     )
     generated_tokens = int(generated_ids.shape[1] - prompt_tokens)
     full_seq_len = int(generated_ids.shape[1])
-    estimated_bytes = _estimate_kv_cache_bytes(model, full_seq_len)
+    estimated_bytes = estimate_kv_cache_bytes(model, full_seq_len)
     peak_memory = _peak_gpu_memory_mb()
 
     result = BaselineResult(
+        experiment_id=experiment_id,
         model_name=model_name,
-        model_revision=_model_revision(model),
+        model_revision=model_revision or _model_revision(model),
+        tokenizer_revision=tokenizer_revision or model_revision,
         prompt=prompt,
         seed=seed,
         max_new_tokens=max_new_tokens,
@@ -387,7 +385,7 @@ def run_full_cache_baseline(
         device=device_name,
         dtype=str(model.dtype),
         peak_memory_mb=peak_memory,
-        python_version=sys.version.split()[0],
+        python_version=platform.python_version(),
         torch_version=torch.__version__,
         transformers_version=transformers.__version__,
         platform=platform.platform(),
@@ -396,84 +394,5 @@ def run_full_cache_baseline(
         gpu_total_memory_mb=_gpu_total_memory_mb(),
         cuda_version=(torch.version.cuda if torch.cuda.is_available() else None),
         model_config=_model_config_metadata(model),
-        cuda_device_name=(torch.cuda.get_device_name() if torch.cuda.is_available() else None),
     )
     return result
-
-
-def main() -> None:
-    import argparse
-    # Parse baseline options and write the requested measurement files.
-
-    parser = argparse.ArgumentParser(description="Run the full-cache baseline generation harness.")
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=DEFAULT_MODEL,
-        help="Small causal LM name or local path.",
-    )
-    parser.add_argument(
-        "--prompt",
-        type=str,
-        default="The future of memory in transformers is",
-        help="Prompt to send to the model.",
-    )
-    parser.add_argument(
-        "--max-new-tokens", type=int, default=16, help="Number of tokens to generate."
-    )
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
-    parser.add_argument(
-        "--prompt-lengths", type=int, nargs="+", help="Target prompt lengths in tokens."
-    )
-    parser.add_argument(
-        "--repeats", type=int, default=1, help="Number of runs for each prompt length."
-    )
-    parser.add_argument(
-        "--dtypes",
-        type=str,
-        nargs="+",
-        default=["float32"],
-        choices=["float32", "float16", "bfloat16"],
-        help="Supported precisions to evaluate. CPU float16 is skipped automatically when unsupported.",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("results/baseline"),
-        help="Directory for JSON results.",
-    )
-    args = parser.parse_args()
-
-    if args.repeats < 1:
-        parser.error("--repeats must be at least 1")
-    if args.prompt_lengths and any(length < 1 for length in args.prompt_lengths):
-        parser.error("--prompt-lengths values must be positive")
-
-    prompt_lengths = args.prompt_lengths or [None]
-    run_number = 0
-    for dtype in args.dtypes:
-        for prompt_length in prompt_lengths:
-            for repeat in range(args.repeats):
-                run_number += 1
-                try:
-                    result = run_full_cache_baseline(
-                        model_name=args.model,
-                        prompt=args.prompt,
-                        max_new_tokens=args.max_new_tokens,
-                        seed=args.seed + repeat,
-                        prompt_length=prompt_length,
-                        dtype=dtype,
-                    )
-                except RuntimeError as exc:
-                    print(
-                        f"Skipping dtype={dtype} for prompt_length={prompt_length}: {exc}",
-                        file=sys.stderr,
-                    )
-                    continue
-                result_path = _save_result(result, args.output_dir, run_number)
-                print(json.dumps(result.to_dict(), indent=2))
-                print(f"Saved result to {result_path}", file=sys.stderr)
-
-
-if __name__ == "__main__":
-    main()

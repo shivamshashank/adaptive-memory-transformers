@@ -19,11 +19,9 @@ The research question is not *"can KV-cache compression save memory?"* It is:
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
 ![Transformers](https://img.shields.io/badge/Hugging%20Face-Transformers-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black)
-![NumPy](https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white)
-![SciPy](https://img.shields.io/badge/SciPy-8CAAE6?style=for-the-badge&logo=scipy&logoColor=white)
 ![License](https://img.shields.io/github/license/shivamshashank/adaptive-memory-transformers?style=flat-square)
 
-**Status:** implementation scaffold and smoke evaluation available · no research results reported
+**Status:** reproducible full-cache baseline available · compressed-cache implementation in progress · no research results reported
 
 </div>
 
@@ -180,7 +178,7 @@ flowchart LR
 ### Languages
 
 - **Python 3.11+** for models, experiments, evaluation, analysis, and figures.
-- **YAML/JSON** for experiment configuration and machine-readable outputs.
+- **TOML/JSON** for experiment configuration and machine-readable outputs.
 - **Markdown** for research notes, methods, and reproducibility documentation.
 
 ### Core ML and numerical tools
@@ -221,13 +219,13 @@ environment is the canonical setup:
 ```bash
 python3 -m pip install uv==0.11.26
 uv sync --frozen --group dev
-uv run python scripts/run_baseline.py --max-new-tokens 16
+uv run amt baseline --config configs/smoke/v1.toml
 ```
 
-`requirements.txt` mirrors the runtime dependencies for compatibility, while
-`pyproject.toml` and `uv.lock` define the reproducible development environment.
-The immutable CPU smoke configuration is in `configs/smoke/v1.toml`; the frozen
-research contract is in `research/protocol_v1.md`.
+`pyproject.toml` is the single dependency declaration and `uv.lock` pins the
+complete environment. The immutable CPU smoke configuration is in
+`configs/smoke/v1.toml`; the frozen research contract is in
+`research/protocol_v1.md`.
 
 The planned baseline will record prompt length, generated length, prefill and
 decode time, decode throughput, estimated KV-cache bytes, device, and peak GPU
@@ -236,7 +234,8 @@ will not be hand-edited.
 
 ## 🔬 Experiments
 
-The experiment sequence is documented in [phases.md](phases.md). In brief:
+The experiment sequence is documented in
+[10_phase_phd_roadmap.md](10_phase_phd_roadmap.md). In brief:
 
 1. Literature review and gap definition.
 2. Full-cache inference harness.
@@ -268,12 +267,13 @@ measurement project.
 ### Fast checks
 
 ```bash
-uv run python -m compileall -q src scripts
-uv run python scripts/run_baseline.py --help
-uv run ruff format --check src scripts tests
-uv run ruff check src scripts tests
+uv run python -m compileall -q src
+uv run amt --help
+uv run ruff format --check src tests
+uv run ruff check src tests
 uv run mypy
 uv run pytest
+uv run pre-commit run --all-files
 git diff --check
 ```
 
@@ -304,7 +304,7 @@ the result metadata.
 
 | Document | Purpose |
 |---|---|
-| [phases.md](phases.md) | Ten-phase plan, deliverables, experiments, and exit criteria |
+| [10_phase_phd_roadmap.md](10_phase_phd_roadmap.md) | Research roadmap, deliverables, experiments, and exit criteria |
 | [README.md](README.md) | Project scope, architecture, stack, and reproducibility contract |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution workflow and repository standards |
 | [SECURITY.md](SECURITY.md) | Responsible security disclosure |
@@ -317,13 +317,12 @@ evaluation protocol, experiment log, failure-analysis report, and manuscript.
 
 ## ⚠️ Current limitations
 
-This repository has an implementation scaffold and a small-model decode smoke
-evaluator. It does not yet establish
-that adaptive compression improves quality, memory, or latency. In particular:
+This repository has a reproducible full-cache baseline and deterministic fixed
+policy utilities. It does not yet establish that adaptive compression improves
+quality, memory, or latency. In particular:
 
-- Compressed decode support is a smoke-tested implementation, not a validated
-  research result; arbitrary pruning needs model-specific position handling
-  before broad model claims.
+- Position-correct compressed decoding has not been implemented yet; it is the
+  next correctness milestone.
 - No benchmark result or statistical conclusion is reported here.
 - Model and context coverage will initially be limited by available hardware.
 - Analytical KV size does not equal end-to-end peak GPU memory.
@@ -341,7 +340,7 @@ changes narrow and preserve raw outputs and negative findings.
 
 ```bash
 git checkout -b research/short-description
-python3 -m compileall -q src scripts
+uv run python -m compileall -q src
 git diff --check
 git commit -m "research: describe experiment"
 ```

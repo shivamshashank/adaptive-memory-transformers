@@ -22,10 +22,9 @@ results/
 # macOS
 .DS_Store
 
-# VS Code transient files
-.vscode/*.code-workspace
-.vscode/*.log
-.vscode/.ropeproject/
+# Editor settings
+.vscode/
+.idea/
 
 # Local secrets
 .env

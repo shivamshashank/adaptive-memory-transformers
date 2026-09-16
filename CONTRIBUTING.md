@@ -42,21 +42,17 @@ python3 -m pip install uv==0.11.26
 uv sync --frozen --group dev
 ```
 
-`requirements.txt` mirrors runtime dependencies for compatibility. Use
-`pyproject.toml` and `uv.lock` for development and CI.
+`pyproject.toml` is the single dependency declaration and `uv.lock` is the
+committed resolution used by development and CI.
 
 ## Working on Code and Experiments
 
 Keep changes narrow and preserve the research boundary:
 
-- `src/cache/`: Cache interfaces and retention policies.
-- `src/compression/`: Compression implementations.
-- `src/importance/`: Attention, recency, and frequency signals.
-- `src/evaluation/`: Measurement and benchmark harnesses.
+- `src/amt/`: Installable research package and command-line interface.
 - `configs/`: Versioned experiment configurations.
-- `experiments/`: Experiment-specific runners and analysis.
 - `results/`: Raw generated outputs; do not hand-edit them.
-- `figures/`: Reproducible generated figures.
+- `tests/`: Fast deterministic checks that do not require a model download.
 
 For experiment changes, record the model revision, dataset or prompt source,
 seed, dtype, hardware, cache budget, metrics, and result location.
@@ -66,12 +62,13 @@ seed, dtype, hardware, cache budget, metrics, and result location.
 Run the complete local quality gate:
 
 ```bash
-uv run python -m compileall -q src scripts
-uv run python scripts/run_baseline.py --help
-uv run ruff format --check src scripts tests
-uv run ruff check src scripts tests
+uv run python -m compileall -q src
+uv run amt --help
+uv run ruff format --check src tests
+uv run ruff check src tests
 uv run mypy
 uv run pytest
+uv run pre-commit run --all-files
 git diff --check
 ```
 
@@ -104,7 +101,8 @@ benchmark result.
 - Preserve failed runs and negative findings.
 - Report selection overhead rather than hiding it in implementation details.
 - Do not claim novelty, generality, or speedups without evidence.
-- Update [phases.md](phases.md) when the research plan materially changes.
+- Update [10_phase_phd_roadmap.md](10_phase_phd_roadmap.md) when the research
+  plan materially changes.
 
 ## Commit Guidelines
 

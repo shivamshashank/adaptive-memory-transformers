@@ -27,17 +27,5 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --frozen --group dev
 
-      - name: Compile Python sources
-        run: uv run python -m compileall -q src scripts
-
-      - name: Check formatting
-        run: uv run ruff format --check src scripts tests
-
-      - name: Lint
-        run: uv run ruff check src scripts tests
-
-      - name: Type-check
-        run: uv run mypy
-
-      - name: Run tests
-        run: uv run pytest
+      - name: Run repository quality gate
+        run: uv run pre-commit run --all-files

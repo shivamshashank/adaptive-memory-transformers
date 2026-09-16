@@ -9,16 +9,22 @@ authors = [
   { name = "Shivam Shashank" },
 ]
 dependencies = [
-  "certifi==2026.7.22",
   "matplotlib==3.11.2",
-  "numpy==2.3.5",
   "torch==2.12.1",
   "transformers==5.13.0",
 ]
 
+[project.scripts]
+amt = "amt.cli:main"
+
+[build-system]
+requires = ["setuptools==81.0.0"]
+build-backend = "setuptools.build_meta"
+
 [dependency-groups]
 dev = [
   "mypy>=1.15,<2",
+  "pre-commit>=4.3,<5",
   "pytest>=9,<10",
   "pytest-cov>=6,<8",
   "ruff>=0.11,<1",
@@ -26,7 +32,7 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = "-ra -q"
-pythonpath = ["."]
+pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.ruff]
@@ -37,19 +43,9 @@ extend-exclude = [".ua", ".venv", "results"]
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
 
-[tool.ruff.lint.per-file-ignores]
-"scripts/*.py" = ["E402"]
-"src/experiments/*.py" = ["E402"]
-
 [tool.mypy]
 python_version = "3.11"
-files = [
-  "src/adaptive_policy.py",
-  "src/baseline.py",
-  "src/cache_policies.py",
-  "src/importance.py",
-  "src/layer_adaptive_policy.py",
-]
+files = ["src/amt"]
 check_untyped_defs = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
@@ -59,3 +55,6 @@ show_error_codes = true
 warn_redundant_casts = true
 warn_unused_configs = true
 warn_unused_ignores = true
+
+[tool.setuptools.packages.find]
+where = ["src"]

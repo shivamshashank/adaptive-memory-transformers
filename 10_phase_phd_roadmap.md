@@ -99,7 +99,7 @@ RULER is preferable to the current passkey-only evidence because it was designed
 
 **Build**
 
-- Commit and push the real `src/`, `tests/`, `scripts/`, `docs/`, `requirements`/lockfile and configs. Keep raw datasets, credentials, virtual environments and large transient checkpoints out of Git.
+- Commit the real package, tests, documentation, lockfile, and configs. Keep raw datasets, credentials, virtual environments and large transient checkpoints out of Git.
 - Replace the README's performance language with an accurate **prototype / validation in progress** status.
 - Add `REPRODUCE.md`, a data card directory, an experiment-card template, `CITATION.cff`, and a license/third-party notices section.
 - Add CI for install, lint, type checks and the full unit suite. Save coverage but do not optimise for a vanity percentage.
@@ -136,7 +136,7 @@ RULER is preferable to the current passkey-only evidence because it was designed
 
 **Build**
 
-- Refactor `src/adaptive_policy.py`, `src/importance.py`, `src/cache_policies.py` and `src/layer_adaptive_policy.py` behind a common selector interface: `observe(step_state)`, `select(layer, budget)`, `apply(cache, indices)`.
+- Extend `src/amt/policies.py` with a common selector interface: `observe(step_state)`, `select(layer, budget)`, and `apply(cache, indices)`; keep model-specific cache handling in a separate adapter module.
 - Implement the four signals in the research contract. Unit-test that independently changing each signal changes selected indices under a crafted, deterministic fixture.
 - Reserve any fixed sink tokens explicitly and charge them to the budget. Keep a policy audit log per step: raw signal summaries, normalised ranks, selected original indices, and cache bytes.
 - First implement global selection across all layers. Implement actual per-layer `B_l` allocation only after the global version works; unit-test that allocated budgets sum to `B` and that each layer receives/apply its own selection.
@@ -192,7 +192,7 @@ RULER is preferable to the current passkey-only evidence because it was designed
 
 **Build**
 
-- Replace the current scattered scripts in `src/experiments/` with a single CLI such as `amt run --config configs/...`, while retaining old scripts as archived prototype references.
+- Extend the single `amt` CLI with an evidence-grade `run --config` path. Keep superseded prototype code in Git history rather than in the active source tree.
 - Create a per-run directory containing immutable config, Git SHA and dirty state, package lock hash, model revision, tokenizer revision, device info, seed, stdout/stderr, raw JSONL and an aggregated Parquet table.
 - Add a `manifest.json` that records command, start/finish time, cache implementation, context length, policy, budget, model and dataset hashes.
 - Add a validation command that rejects mixed model revisions, duplicate example IDs, incomplete groups, out-of-budget caches and leakage of development examples into confirmation.

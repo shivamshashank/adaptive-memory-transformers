@@ -1,8 +1,7 @@
-#!/usr/bin/env python3
-# Aggregate baseline results and plot KV-cache memory scaling.
+"""Aggregate baseline results and plot KV-cache memory scaling."""
+
 from __future__ import annotations
 
-import argparse
 import json
 import statistics
 from pathlib import Path
@@ -35,7 +34,7 @@ class _AxesProtocol(Protocol):
     def grid(self, visible: bool, *, linestyle: str, alpha: float) -> None: ...
 
 
-class _RunResult(TypedDict):
+class BaselineRecord(TypedDict):
     prompt_tokens: int
     actual_kv_cache_seq_len: int
     estimated_kv_cache_bytes: int
@@ -46,7 +45,7 @@ class _RunResult(TypedDict):
     seed: int
 
 
-class _Stats(TypedDict):
+class SummaryStats(TypedDict):
     mean: float
     std: float
     min: float
@@ -54,32 +53,30 @@ class _Stats(TypedDict):
     n: int
 
 
-class _ResultRow(TypedDict):
+class SummaryRow(TypedDict):
     prompt_tokens: int
-    final_sequence_length: _Stats
-    estimated_kv_cache_bytes: _Stats
-    actual_kv_cache_bytes: _Stats
-    prefill_time_s: _Stats
-    decode_time_s: _Stats
-    decode_tokens_per_second: _Stats
+    final_sequence_length: SummaryStats
+    estimated_kv_cache_bytes: SummaryStats
+    actual_kv_cache_bytes: SummaryStats
+    prefill_time_s: SummaryStats
+    decode_time_s: SummaryStats
+    decode_tokens_per_second: SummaryStats
     seed_values: list[int]
 
 
-class _Summary(TypedDict):
+class Summary(TypedDict):
     num_runs: int
     prompt_lengths: list[int]
-    rows: list[_ResultRow]
+    rows: list[SummaryRow]
 
 
-def _load_result(path: Path) -> _RunResult:
-    # Load one baseline JSON result.
+def _load_result(path: Path) -> BaselineRecord:
     with path.open("r", encoding="utf-8") as handle:
         loaded = json.load(handle)
-    return cast(_RunResult, loaded)
+    return cast(BaselineRecord, loaded)
 
 
-def _stats(values: list[float]) -> _Stats:
-    # Compute descriptive statistics for one measurement series.
+def _stats(values: list[float]) -> SummaryStats:
     if not values:
         return {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0, "n": 0}
 
@@ -92,17 +89,17 @@ def _stats(values: list[float]) -> _Stats:
     }
 
 
-def _summarize_results(results: list[_RunResult]) -> _Summary:
-    # Group baseline measurements by prompt length.
-    by_prompt: dict[int, list[_RunResult]] = {}
+def summarize_records(results: list[BaselineRecord]) -> Summary:
+    """Group baseline records by prompt length and compute descriptive statistics."""
+    by_prompt: dict[int, list[BaselineRecord]] = {}
     for result in results:
         prompt_tokens = int(result["prompt_tokens"])
         by_prompt.setdefault(prompt_tokens, []).append(result)
 
-    rows: list[_ResultRow] = []
+    rows: list[SummaryRow] = []
     for prompt_tokens in sorted(by_prompt):
-        runs: list[_RunResult] = by_prompt[prompt_tokens]
-        row: _ResultRow = {
+        runs: list[BaselineRecord] = by_prompt[prompt_tokens]
+        row: SummaryRow = {
             "prompt_tokens": prompt_tokens,
             "final_sequence_length": _stats(
                 [float(run["actual_kv_cache_seq_len"]) for run in runs]
@@ -135,7 +132,6 @@ def _plot_series(
     title: str,
     output_dir: Path,
 ) -> None:
-    # Save one metric-versus-sequence plot.
     fig, ax = plt.subplots(figsize=(7, 4.5))
     typed_fig = cast(_FigureProtocol, fig)
     typed_ax = cast(_AxesProtocol, ax)
@@ -150,8 +146,7 @@ def _plot_series(
     plt.close(fig)
 
 
-def _write_markdown_table(summary: _Summary, output_path: Path) -> None:
-    # Write the summary rows as a Markdown table.
+def _write_markdown_table(summary: Summary, output_path: Path) -> None:
     lines = [
         "# Memory scaling summary",
         "",
@@ -172,27 +167,9 @@ def _write_markdown_table(summary: _Summary, output_path: Path) -> None:
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def main() -> None:
-    # Parse aggregation options and generate summaries and plots.
-    parser = argparse.ArgumentParser(
-        description="Aggregate and plot KV-cache memory scaling results."
-    )
-    parser.add_argument(
-        "--input-dir",
-        type=Path,
-        default=Path("results/memory_scaling"),
-        help="Directory containing per-run JSON baseline results.",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=None,
-        help="Directory for the summary and plots; defaults to the input directory.",
-    )
-    args = parser.parse_args()
-
-    input_dir = args.input_dir
-    output_dir = args.output_dir or input_dir
+def summarize_results(input_dir: Path, output_dir: Path | None = None) -> Summary:
+    """Aggregate baseline JSON records and generate tables and plots."""
+    output_dir = output_dir or input_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     results = [
@@ -203,13 +180,12 @@ def main() -> None:
     if not results:
         raise FileNotFoundError(f"No JSON result files found in {input_dir}")
 
-    summary = _summarize_results(results)
+    summary = summarize_records(results)
     summary_path = output_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 
     _write_markdown_table(summary, output_dir / "summary.md")
 
-    prompt_lengths = [row["prompt_tokens"] for row in summary["rows"]]
     seq_lengths = [int(row["final_sequence_length"]["mean"]) for row in summary["rows"]]
     kv_means = [float(row["actual_kv_cache_bytes"]["mean"]) for row in summary["rows"]]
     prefill_means = [float(row["prefill_time_s"]["mean"]) for row in summary["rows"]]
@@ -240,18 +216,4 @@ def main() -> None:
         output_dir,
     )
 
-    print(
-        json.dumps(
-            {
-                "summary_path": str(summary_path),
-                "prompt_lengths": prompt_lengths,
-                "seq_lengths": seq_lengths,
-                "num_runs": summary["num_runs"],
-            },
-            indent=2,
-        )
-    )
-
-
-if __name__ == "__main__":
-    main()
+    return summary
