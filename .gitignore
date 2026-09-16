@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Experiment outputs
+results/
+
+# macOS
+.DS_Store
+
+# VS Code transient files
+.vscode/*.code-workspace
+.vscode/*.log
+.vscode/.ropeproject/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Understand Anything
+.ua/

@@ -23,25 +23,27 @@ By participating in this project, you agree to abide by our
 
 ## Development Setup
 
-The planned implementation uses **Python**, **PyTorch**, and Hugging Face
-**Transformers**. The repository is currently documentation-only, so these
-commands describe the intended setup once implementation is added.
+The implementation uses **Python**, **PyTorch**, and Hugging Face
+**Transformers**. Dependency resolution and developer commands are managed by
+`uv` using the committed lockfile.
 
 Prerequisites:
 
 - Python 3.11 or newer
-- A virtual environment or Conda environment
+- `uv` 0.11.26
 - PyTorch and Transformers
 - An NVIDIA CUDA GPU for performance experiments, where available
 - CPU support for unit tests and small smoke tests
 
-When `requirements.txt` is available, the intended setup is:
+Create the exact locked development environment with:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r requirements.txt
+python3 -m pip install uv==0.11.26
+uv sync --frozen --group dev
 ```
+
+`requirements.txt` mirrors runtime dependencies for compatibility. Use
+`pyproject.toml` and `uv.lock` for development and CI.
 
 ## Working on Code and Experiments
 
@@ -61,27 +63,28 @@ seed, dtype, hardware, cache budget, metrics, and result location.
 
 ## Formatting, Linting, and Validation
 
-Run the checks supported by the implementation:
+Run the complete local quality gate:
 
 ```bash
-python3 -m compileall -q src scripts
-PYTHONPATH=. python3 scripts/run_baseline.py --help
+uv run python -m compileall -q src scripts
+uv run python scripts/run_baseline.py --help
+uv run ruff format --check src scripts tests
+uv run ruff check src scripts tests
+uv run mypy
+uv run pytest
 git diff --check
 ```
-
-When formatting and linting tools are introduced, document their versions and
-commands here and pin them where practical.
 
 ## Testing
 
 Code changes should include focused unit or integration tests. Research changes
 should also include the configuration and raw output needed to inspect them.
 
-Planned commands:
+Commands:
 
 ```bash
-python3 -m pytest -q
-python3 -m pytest --cov=src -q
+uv run pytest
+uv run pytest --cov=src --cov-report=term-missing
 ```
 
 Planned test coverage includes KV-cache byte calculations across MHA, GQA, and

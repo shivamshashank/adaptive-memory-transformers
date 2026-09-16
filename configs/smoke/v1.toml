@@ -1,0 +1,27 @@
+schema_version = 1
+experiment_id = "smoke-v1"
+purpose = "Deterministic CPU smoke test for the full-cache measurement pipeline."
+
+[model]
+id = "hf-internal-testing/tiny-random-gpt2"
+revision = "71034c5d8bde858ff824298bdedc65515b97d2b9"
+tokenizer_revision = "71034c5d8bde858ff824298bdedc65515b97d2b9"
+dtype = "float32"
+device = "cpu"
+
+[generation]
+prompt = "The future of memory in transformers is"
+prompt_tokens = 32
+max_new_tokens = 8
+do_sample = false
+
+[reproducibility]
+seeds = [41, 42, 43]
+repeats_per_seed = 1
+record_git_dirty_state = true
+record_environment = true
+record_cache_shapes = true
+
+[outputs]
+directory = "results/smoke-v1"
+format = "json"

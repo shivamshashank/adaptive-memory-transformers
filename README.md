@@ -23,7 +23,7 @@ The research question is not *"can KV-cache compression save memory?"* It is:
 ![SciPy](https://img.shields.io/badge/SciPy-8CAAE6?style=for-the-badge&logo=scipy&logoColor=white)
 ![License](https://img.shields.io/github/license/shivamshashank/adaptive-memory-transformers?style=flat-square)
 
-**Status:** research planning and design stage · implementation and results not yet reported
+**Status:** implementation scaffold and smoke evaluation available · no research results reported
 
 </div>
 
@@ -209,53 +209,25 @@ the portfolio and are not needed for this research question.
 
 ## 📂 Target repository structure
 
-The repository currently contains the project documentation and contribution
-policies. The following is the intended structure as implementation proceeds;
-entries marked planned are not yet present.
-
-```text
-configs/
-	baseline.yaml              Reproducible baseline configuration
-
-src/
-	models/                    Model loading and KV-cache accounting
-	cache/                     Cache interfaces and policies (planned)
-	compression/               Compression implementations (planned)
-	importance/                Attention, recency, and frequency signals (planned)
-	evaluation/                Inference and benchmark measurement code
-	utils/                     Configuration and reproducibility helpers
-
-experiments/
-	baseline/                  Baseline measurements
-	importance/                Importance analysis
-	compression/               Policy comparisons
-	ablations/                 Signal and allocation ablations
-	generalization/            Models, tasks, and context-length transfer
-
-scripts/                     Reproducible command-line entry points
-results/                     Raw generated outputs
-figures/                     Generated plots and paper figures
-paper/                       Manuscript, figures, and references (planned)
-phases.md                    Ten-phase research and implementation plan
-
-README.md                    Project overview and reproducibility contract
-requirements.txt             Python dependencies (planned)
-environment.yml              Conda environment specification (planned)
-pyproject.toml               Python package metadata (planned)
-```
+The current directory tree, file responsibilities, inputs, outputs, and
+execution entry points are documented in
+[docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md).
 
 ## ⚡ Implementation quick start
 
-There is no runnable inference harness in the repository yet. The first
-implementation milestone will add the Python package, baseline configuration,
-and `scripts/run_baseline.py`. Once those files exist, the intended setup is:
+The initial full-cache inference harness is available. The locked development
+environment is the canonical setup:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r requirements.txt
-PYTHONPATH=. python3 scripts/run_baseline.py --config configs/baseline.yaml
+python3 -m pip install uv==0.11.26
+uv sync --frozen --group dev
+uv run python scripts/run_baseline.py --max-new-tokens 16
 ```
+
+`requirements.txt` mirrors the runtime dependencies for compatibility, while
+`pyproject.toml` and `uv.lock` define the reproducible development environment.
+The immutable CPU smoke configuration is in `configs/smoke/v1.toml`; the frozen
+research contract is in `research/protocol_v1.md`.
 
 The planned baseline will record prompt length, generated length, prefill and
 decode time, decode throughput, estimated KV-cache bytes, device, and peak GPU
@@ -293,11 +265,15 @@ The experiment sequence is documented in [phases.md](phases.md). In brief:
 Testing is layered because this is both a research codebase and a numerical
 measurement project.
 
-### Planned fast checks
+### Fast checks
 
 ```bash
-python3 -m compileall -q src scripts
-PYTHONPATH=. python3 scripts/run_baseline.py --help
+uv run python -m compileall -q src scripts
+uv run python scripts/run_baseline.py --help
+uv run ruff format --check src scripts tests
+uv run ruff check src scripts tests
+uv run mypy
+uv run pytest
 git diff --check
 ```
 
@@ -333,16 +309,21 @@ the result metadata.
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution workflow and repository standards |
 | [SECURITY.md](SECURITY.md) | Responsible security disclosure |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community expectations |
+| [research/protocol_v1.md](research/protocol_v1.md) | Frozen hypotheses, comparisons, metrics, and exclusion rules |
+| [docs/PHD_CV_10_DAY_CHECKLIST.md](docs/PHD_CV_10_DAY_CHECKLIST.md) | Ten-day implementation and validation checklist |
 
 Planned research documents include a literature matrix, preregistered
 evaluation protocol, experiment log, failure-analysis report, and manuscript.
 
 ## ⚠️ Current limitations
 
-This repository is at the research-planning stage. It does not yet establish
+This repository has an implementation scaffold and a small-model decode smoke
+evaluator. It does not yet establish
 that adaptive compression improves quality, memory, or latency. In particular:
 
-- No compression policy has been validated yet.
+- Compressed decode support is a smoke-tested implementation, not a validated
+  research result; arbitrary pruning needs model-specific position handling
+  before broad model claims.
 - No benchmark result or statistical conclusion is reported here.
 - Model and context coverage will initially be limited by available hardware.
 - Analytical KV size does not equal end-to-end peak GPU memory.
