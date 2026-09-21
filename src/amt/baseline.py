@@ -132,7 +132,7 @@ class BaselineResult:
     actual_kv_cache_shapes: list[dict[str, list[int]]]
     device: str
     dtype: str
-    peak_memory_mb: float
+    peak_memory_mb: float | None
     python_version: str
     torch_version: str
     transformers_version: str
@@ -160,13 +160,13 @@ def estimate_kv_cache_bytes(model: _CausalLM, seq_len: int) -> int:
 
     elem_bytes = torch.empty((), dtype=model.dtype).element_size()
     estimated = 2 * num_layers * kv_heads * seq_len * head_dim * elem_bytes
-    return int(estimated)
+    return estimated
 
 
-def _peak_gpu_memory_mb() -> float:
-    if torch.cuda.is_available():
-        return float(torch.cuda.max_memory_allocated() / (1024**2))
-    return 0.0
+def _peak_gpu_memory_mb(device: str) -> float | None:
+    if torch.device(device).type == "cuda" and torch.cuda.is_available():
+        return float(torch.cuda.max_memory_allocated(device) / (1024**2))
+    return None
 
 
 def _torch_dtype_for_name(dtype_name: str, device: str) -> torch.dtype:
@@ -189,20 +189,30 @@ def _torch_dtype_for_name(dtype_name: str, device: str) -> torch.dtype:
     return mapping[normalized]
 
 
-def _synchronize_device() -> None:
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
+def _synchronize_device(device: torch.device) -> None:
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    elif device.type == "mps":
+        torch.mps.synchronize()
 
 
 def _measure_prefill_and_decode(
     model: _CausalLM,
     inputs: _TokenizedInputs,
     max_new_tokens: int,
-) -> tuple[float, float, _Cache]:
+) -> tuple[float, float, _Cache, torch.Tensor]:
+    """One fixed-length greedy run; EOS is not an early-stop condition.
+
+    Prefill predicts token one; N-1 decode calls predict the remaining tokens.
+    The last predicted token is not itself cached. Timings include selection and
+    device synchronization; total is the sum of these two instrumented phases.
+    """
+    if max_new_tokens < 1:
+        raise ValueError("max_new_tokens must be positive")
     input_ids = inputs["input_ids"]
     attention_mask = inputs.get("attention_mask")
 
-    _synchronize_device()
+    _synchronize_device(input_ids.device)
     prefill_start = time.perf_counter()
     with torch.no_grad():
         output = model(
@@ -210,14 +220,14 @@ def _measure_prefill_and_decode(
             attention_mask=attention_mask,
             use_cache=True,
         )
-    _synchronize_device()
-    prefill_time = time.perf_counter() - prefill_start
-
     cache = output.past_key_values
     next_token = output.logits[:, -1:, :].argmax(dim=-1)
+    generated = [input_ids, next_token]
+    _synchronize_device(input_ids.device)
+    prefill_time = time.perf_counter() - prefill_start
     decode_start = time.perf_counter()
     with torch.no_grad():
-        for _ in range(max_new_tokens):
+        for _ in range(max_new_tokens - 1):
             if attention_mask is not None:
                 attention_mask = torch.cat(
                     [attention_mask, torch.ones_like(attention_mask[:, :1])],
@@ -231,9 +241,11 @@ def _measure_prefill_and_decode(
             )
             cache = output.past_key_values
             next_token = output.logits[:, -1:, :].argmax(dim=-1)
-    _synchronize_device()
+            generated.append(next_token)
+    generated_ids = torch.cat(generated, dim=1)
+    _synchronize_device(input_ids.device)
     decode_time = time.perf_counter() - decode_start
-    return prefill_time, decode_time, cache
+    return prefill_time, decode_time, cache, generated_ids
 
 
 def _actual_cache_metadata(cache: _Cache) -> tuple[int, list[dict[str, list[int]]]]:
@@ -257,7 +269,7 @@ def _prompt_for_length(tokenizer: _Tokenizer, prompt: str, target_tokens: int | 
 
     prompt_inputs = tokenizer(prompt, return_tensors="pt")
     prompt_ids = prompt_inputs["input_ids"][0]
-    repetitions = max(1, (target_tokens + int(prompt_ids.shape[0]) - 1) // int(prompt_ids.shape[0]))
+    repetitions = max(1, (target_tokens + prompt_ids.shape[0] - 1) // prompt_ids.shape[0])
     expanded_prompt = " ".join([prompt] * repetitions)
     expanded_inputs = tokenizer(expanded_prompt, return_tensors="pt")
     expanded_ids = expanded_inputs["input_ids"][0][:target_tokens]
@@ -326,13 +338,13 @@ def run_full_cache_baseline(
     model.to(device_name)
     model.to(dtype=torch_dtype)
     model.eval()
-    if torch.cuda.is_available():
-        torch.cuda.reset_peak_memory_stats()
+    if torch.device(device_name).type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device_name)
 
     inputs = tokenizer(prompt, return_tensors="pt").to(device_name)
-    prompt_tokens = int(inputs["input_ids"].shape[1])
+    prompt_tokens = inputs["input_ids"].shape[1]
 
-    prefill_time, decode_time, measured_cache = _measure_prefill_and_decode(
+    prefill_time, decode_time, measured_cache, generated_ids = _measure_prefill_and_decode(
         model,
         inputs,
         max_new_tokens,
@@ -341,26 +353,14 @@ def run_full_cache_baseline(
     actual_cache_seq_len = measured_cache.get_seq_length()
     del measured_cache
 
-    _synchronize_device()
-    start = time.perf_counter()
-    with torch.no_grad():
-        generated_ids = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=False,
-            pad_token_id=tokenizer.eos_token_id,
-            use_cache=True,
-        )
-    _synchronize_device()
-    total_time = time.perf_counter() - start
+    total_time = prefill_time + decode_time
 
     generated_text = tokenizer.decode(
         generated_ids[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
     )
-    generated_tokens = int(generated_ids.shape[1] - prompt_tokens)
-    full_seq_len = int(generated_ids.shape[1])
-    estimated_bytes = estimate_kv_cache_bytes(model, full_seq_len)
-    peak_memory = _peak_gpu_memory_mb()
+    generated_tokens = generated_ids.shape[1] - prompt_tokens
+    estimated_bytes = estimate_kv_cache_bytes(model, actual_cache_seq_len)
+    peak_memory = _peak_gpu_memory_mb(device_name)
 
     result = BaselineResult(
         experiment_id=experiment_id,
@@ -377,7 +377,9 @@ def run_full_cache_baseline(
         tokens_per_second=(generated_tokens / total_time) if total_time > 0 else 0.0,
         prefill_time_s=prefill_time,
         decode_time_s=decode_time,
-        decode_tokens_per_second=((max_new_tokens / decode_time) if decode_time > 0 else 0.0),
+        decode_tokens_per_second=(
+            (max(0, generated_tokens - 1) / decode_time) if decode_time > 0 else 0.0
+        ),
         estimated_kv_cache_bytes=estimated_bytes,
         actual_kv_cache_bytes=actual_cache_bytes,
         actual_kv_cache_seq_len=actual_cache_seq_len,

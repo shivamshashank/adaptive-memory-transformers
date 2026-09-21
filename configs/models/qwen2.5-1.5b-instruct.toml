@@ -1,0 +1,21 @@
+schema_version = 1
+experiment_id = "qwen2.5-1.5b-instruct-verification"
+
+[model]
+id = "Qwen/Qwen2.5-1.5B-Instruct"
+revision = "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
+tokenizer_revision = "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
+dtype = "bfloat16"
+device = "mps"
+
+[generation]
+prompt = "Explain why retaining original token positions matters when pruning a Transformer KV cache."
+prompt_tokens = 128
+max_new_tokens = 8
+
+[reproducibility]
+seeds = [42]
+repeats_per_seed = 1
+
+[outputs]
+directory = "results/qwen2.5-1.5b-instruct-verification"

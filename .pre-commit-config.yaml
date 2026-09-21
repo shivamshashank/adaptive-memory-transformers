@@ -12,7 +12,7 @@ repos:
 
       - id: compile
         name: Python sources compile
-        entry: uv run --frozen python -m compileall -q src tests
+        entry: uv run --frozen python -m compileall -q src tests scripts
         language: system
         pass_filenames: false
         always_run: true
@@ -26,14 +26,14 @@ repos:
 
       - id: ruff-format
         name: Ruff formatting
-        entry: uv run --frozen ruff format --check src tests
+        entry: uv run --frozen ruff format --check src tests scripts
         language: system
         pass_filenames: false
         always_run: true
 
       - id: ruff-lint
         name: Ruff lint
-        entry: uv run --frozen ruff check src tests
+        entry: uv run --frozen ruff check src tests scripts
         language: system
         pass_filenames: false
         always_run: true

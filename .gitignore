@@ -19,6 +19,9 @@ env/
 # Experiment outputs
 results/
 
+# Local model artifacts
+.model-cache/
+
 # macOS
 .DS_Store
 
@@ -33,3 +36,7 @@ results/
 
 # Understand Anything
 .ua/
+
+# Local review material (may contain personal documents)
+tmp/
+audit_report_20260919/

@@ -10,30 +10,30 @@ is a correct implementation, a defensible pilot experiment, reproducible evidenc
 and a concise technical report. A negative result is acceptable if it is measured
 and explained rigorously.
 
-## Already available
+## Current implemented foundation
 
 - [x] Clear research question and hypothesis.
 - [x] Full-cache inference baseline.
 - [x] Analytical and measured KV-cache size reporting.
 - [x] Prefill latency, decode latency, and throughput measurement.
 - [x] Full, recency, and uniform cache-selection policies.
-- [x] Initial adaptive token-selection policy.
-- [x] `DynamicCache` pruning support.
-- [x] Synthetic passkey retrieval evaluator and sweep runner.
-- [x] Initial layer-budget allocation logic.
-- [x] Ablation, quality-memory, and generalization experiment scripts.
-- [x] Initial raw results and plots.
-- [x] Automated unit tests: 27 currently passing.
-- [x] Project architecture knowledge graph in `.ua/knowledge-graph.json`.
+- [x] Position-aware Qwen2 cache pruning and fixed-policy generation.
+- [x] Automated unit tests and optional pinned-model integration tests.
+
+Earlier proxy experiment scripts were removed during the Day 1 cleanup. Minimal
+attention/recency scoring is now implemented. The Part 5 CPU development evaluator
+is separate from the planned long-context benchmark and layer-budget allocation;
+old prototype results are not evidence for the current implementation.
 
 ## Non-negotiable research blockers
 
-- [ ] Prove that custom-cache decoding at 100% retention is equivalent to normal
+- [x] Prove that custom-cache decoding at 100% retention is equivalent to normal
       Transformers decoding.
-- [ ] Preserve correct original token positions after arbitrary cache pruning.
-- [ ] Make recency and historical-attention signals actually affect adaptive
-      selection.
-- [ ] Remove or rename the current fake "frequency" signal.
+- [x] Preserve correct original token positions after arbitrary cache pruning
+      in the supported Qwen2 adapter (see Day 3 numerical scope).
+- [x] Make attention and recency actually affect selection in the reduced Part 4
+      scope. Historical attention remains deferred, not implemented.
+- [x] Remove the fake "frequency" signal (absent from the current package).
 - [ ] Replace retained-attention coverage as the primary quality metric with an
       independent task metric.
 - [ ] Apply layer-specific budgets to the physical per-layer caches during real
@@ -88,60 +88,149 @@ and explained rigorously.
 
 ### Tasks
 
-- [ ] Implement a deterministic reference test against standard Transformers
+- [x] Implement a deterministic reference test against standard Transformers
       decoding.
-- [ ] Compare logits after prefill.
-- [ ] Compare logits across multiple autoregressive decode steps.
-- [ ] Compare generated token IDs under greedy decoding.
-- [ ] Test at least one tiny GPT-style model and the intended primary model family.
-- [ ] Define and document numerical tolerances by dtype.
-- [ ] Test cache tensor shapes, sequence lengths, and byte accounting.
-- [ ] Add a regression test for 100% retention equivalence.
+- [x] Compare logits after prefill.
+- [x] Compare logits across multiple autoregressive decode steps.
+- [x] Compare generated token IDs under greedy decoding.
+- [x] Test a locally constructed and an immutable downloaded tiny GPT-style model.
+- [x] Test the intended primary model family (`Qwen2.5-1.5B-Instruct`).
+- [x] Define and document numerical tolerances by dtype.
+- [x] Test cache tensor shapes, sequence lengths, and byte accounting.
+- [x] Add a regression test for 100% retention equivalence.
 
 ### Exit gate
 
-- [ ] The custom cache at 100% retention matches reference logits and generated
-      tokens within the declared tolerance.
+- [x] The custom cache at 100% retention matches reference logits and generated
+      tokens within the declared tolerance on the intended primary model family.
+
+### Current evidence
+
+- Completed: deterministic CPU equivalence on a locally constructed GPT-2 and
+  `hf-internal-testing/tiny-random-gpt2` at immutable revision
+  `71034c5d8bde858ff824298bdedc65515b97d2b9`.
+- Exact greedy token equality and float32 logit equivalence passed across prefill
+  and multiple decode steps.
+- Cache sequence growth, per-layer tensor shapes, and physical byte accounting
+  are covered by regression tests.
+- Completed: pinned `Qwen/Qwen2.5-1.5B-Instruct` revision
+  `989aa7980e4cf806f80c7fef2b1adb7bc71aa306` passed in BF16 on Apple M1 MPS.
+- The Qwen run exposed and fixed an oracle confound: Transformers 5.13 inherited
+  the model's repetition penalty unless every neutral greedy control was
+  explicitly declared. With that penalty removed, logits, greedy tokens, and
+  final cache metadata match.
+
+### Completion record
+
+- Completed: 2026-09-17.
+- Hardware: Apple M1 GPU through PyTorch MPS, 16 GB unified memory.
+- Primary candidate: `Qwen/Qwen2.5-1.5B-Instruct` in BF16.
+- No paid compute was used.
 
 ## Day 3 — Position-correct compressed cache
 
 ### Tasks
 
-- [ ] Introduce a small model-family cache adapter instead of directly treating a
+- [x] Introduce a small model-family cache adapter instead of directly treating a
       pruned `DynamicCache` as a complete abstraction.
-- [ ] Track every retained token's original position.
-- [ ] Pass correct `position_ids` and/or `cache_position` during decoding.
-- [ ] Construct the attention mask from retained positions correctly.
-- [ ] Test non-contiguous retained positions.
-- [ ] Test repeated pruning over several decode steps.
-- [ ] Test early, middle, and recent retained tokens.
-- [ ] Confirm that no removed position silently reappears or becomes reindexed.
+- [x] Track every retained token's original position.
+- [x] Pass correct `position_ids` and/or `cache_position` during decoding.
+- [x] Construct the attention mask from retained positions correctly.
+- [x] Test non-contiguous retained positions.
+- [x] Test repeated pruning over several decode steps.
+- [x] Test early, middle, and recent retained tokens.
+- [x] Confirm that no removed position silently reappears or becomes reindexed.
 
 ### Exit gate
 
-- [ ] Arbitrary retained-position sets pass model-backed semantic tests without
+- [x] Arbitrary retained-position sets pass model-backed semantic tests without
       position corruption.
 
-## Day 4 — Correct adaptive policy signals
+### Completion record
+
+- Completed: 2026-09-18, within the scope below.
+- Implemented `Qwen2CacheAdapter` and fixed-policy compressed greedy decoding.
+- Scope: one unpadded sequence, full attention, default RoPE, identical retained
+  positions across layers. Multi-token append, repeated pruning and empty
+  retention are covered. Per-layer budgets remain Day 7 work.
+- All 40 Day 3 tests passed, including pinned Qwen2.5-1.5B CPU float32 and
+  test-only float64-attention diagnosis; tiny Qwen fixtures cover eager and SDPA.
+- Final full suite: 61 passed, no skips, with both pinned-model integration
+  flags enabled and networking disabled. Formatting, lint, MyPy, compilation,
+  CLI startup and lockfile checks passed. Two dependency deprecation warnings
+  remain in Python package metadata loading.
+- Compared actual outputs and surviving K/V tensors against an independent
+  dense masked-cache oracle; deliberate wrong positions are detected.
+- Native pinned-model float32 uses an empirically diagnosed comparison tolerance
+  of `atol=2e-4`, `rtol=1e-5`. The diagnostic retains the original strict bound.
+- BF16 compressed-cache equivalence remains unqualified following a failed MPS
+  test. See `NUMERICAL_TOLERANCES.md` for all observed errors and scope.
+- Walkthrough: `POSITION_CORRECT_CACHE.md`. No paid compute or new downloads.
+
+## Day 4 — Correct adaptive policy signals (reduced scope)
+
+Scope revised on 2026-09-18 for the user's no-paid-GPU plan. See
+`research/deviations.md`; history/EMA and layer-specific allocation are deferred.
 
 ### Tasks
 
-- [ ] Route the combined importance score into `select_indices`.
-- [ ] Rank-normalize each signal per layer before combining it.
-- [ ] Define true recency from original token positions.
-- [ ] Replace "frequency" with a correctly named historical-attention-demand
-      statistic, or remove it.
-- [ ] Use current-query attention only to decide retention for the next step.
-- [ ] Make weights, sink-token count, local-window size, and EMA horizon configurable.
-- [ ] Add tests showing that changing each signal can change the retained set.
-- [ ] Add tests for ties, missing signals, zero signals, and very small budgets.
+- [x] Route the combined importance score into `select_indices`.
+- [x] Rank-normalize attention per layer before averaging; normalize recency.
+- [x] Define recency from original token positions.
+- [x] Remove "frequency"; do not claim a historical-attention signal.
+- [x] Use current-query attention only to decide retention for the next step.
+- [x] Make weights, sink-token count and local-window size configurable.
+- [x] Add tests showing that changing each signal can change the retained set.
+- [x] Add tests for ties, missing signals, zero signals, and very small budgets.
 
 ### Exit gate
 
-- [ ] Attention-only, attention-plus-recency, attention-plus-history, and all-signal
-      variants produce meaningfully different selections on controlled fixtures.
+- [x] Attention-dominant and recency-dominant variants produce different selections
+      on controlled fixtures; attention-only and adaptive generation pass
+      model-backed checks. The original history/all-signal gate is deferred.
+
+### Completion record
+
+- Implemented per-layer last-query attention collection, head averaging, rank
+  normalization and shared-budget attention/recency selection.
+- Explicit eager-attention requirement prevents silently changing SDPA models.
+- Pinned Qwen2.5-1.5B CPU float32 test passed with attention collection, repeated
+  pruning, both new policies and full-retention equivalence. No new model
+  downloads or paid compute. BF16 remains unqualified.
+- Fixed recency's `recent_window` capacity override and added a regression test.
+- Full local quality gate passed. All three optional Part 3/4 pinned-Qwen cache
+  tests also passed on CPU float32, including native eager-attention and the
+  float64-attention diagnostic. Optional Day 2 downloads were not rerun here.
+- Walkthrough: `ADAPTIVE_SELECTION.md`. No benchmark advantage is established.
 
 ## Day 5 — Unified matched-budget evaluator
+
+### Reduced CPU development scope (2026-09-19)
+
+- [x] Second, separately versioned balanced chat pilot: 32 examples / 288 rows,
+      verified against declared `research/pilot_v2_protocol.md`. Every full-cache
+      example matched dense inference; final quality checks passed (93 tests,
+      five optional skips). See `PILOT_V2_FINDINGS.md`: no adaptive advantage;
+      constrained always-A behavior and raw non-answer outputs require diagnosis.
+
+- [x] Implement a shared delayed-query scoring path for all five policies.
+- [x] Run full cache once per example; use identical context budgets for the
+      four compressed policies (50% and 25%).
+- [x] Save exact dataset, token IDs, label scores, retained positions, physical
+      cache bytes, source snapshot and incremental logs/reports.
+- [x] Audit physical K/V lengths and backing-storage sizes after context pruning
+      and question append; test the audit against a deliberately oversized view.
+- [x] Verify the tiny-model full-cache delayed-query path against dense inference.
+- [x] Complete and inspect the 20-example / 180-evaluation development pilot.
+      Run `20260918T232554Z-e48814cb`: all 180 rows complete and all physical
+      budget audits passed. Independent recomputation confirmed row uniqueness,
+      candidate predictions, accuracy/subset aggregates, capacities and dataset
+      hash. Full cache 16/20; uniform beat adaptive at both tested budgets.
+      See `EVALUATION_PILOT.md` for results and next steps.
+
+The original checklist below is intentionally not all checked: the reduced
+pilot budgets context before an uncompressed query, not total cache throughout
+multi-token generation. See `EVALUATION_PILOT.md` and `research/deviations.md`.
 
 ### Tasks
 

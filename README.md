@@ -21,7 +21,7 @@ The research question is not *"can KV-cache compression save memory?"* It is:
 ![Transformers](https://img.shields.io/badge/Hugging%20Face-Transformers-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black)
 ![License](https://img.shields.io/github/license/shivamshashank/adaptive-memory-transformers?style=flat-square)
 
-**Status:** reproducible full-cache baseline available · compressed-cache implementation in progress · no research results reported
+**Status:** Part 4 attention/recency selection validated in CPU float32 · matched-budget evaluation next · no compression quality or speedup claims
 
 </div>
 
@@ -277,6 +277,16 @@ uv run pre-commit run --all-files
 git diff --check
 ```
 
+The offline test suite constructs a tiny GPT-2 model locally. An optional test
+also validates the decoding oracle against the immutable downloaded smoke model:
+
+```bash
+AMT_RUN_MODEL_INTEGRATION=1 uv run pytest tests/test_decoding.py
+```
+
+The declared dtype tolerances and the exact equivalence contract are documented
+in [docs/NUMERICAL_TOLERANCES.md](docs/NUMERICAL_TOLERANCES.md).
+
 ### Planned unit tests
 
 - KV-cache byte calculations across MHA, GQA, and MQA configurations.
@@ -315,14 +325,50 @@ the result metadata.
 Planned research documents include a literature matrix, preregistered
 evaluation protocol, experiment log, failure-analysis report, and manuscript.
 
+## Validation reports
+
+See [PR scope, compatibility changes and follow-ups](docs/PR_SCOPE.md) for the
+current research-prototype boundary. Tracked pilot summaries are descriptive
+negative results, not evidence of adaptive superiority.
+
+To save tests, logs and model input/output traces in one timestamped folder, run
+`uv run --frozen --group dev python -m amt.validation`. Add `--qwen` for the
+cached primary model. See [validation report instructions](docs/VALIDATION_REPORTS.md).
+
+## CPU development evaluator
+
+`uv run --frozen --group dev python -m amt.evaluation` runs a 20-example
+delayed-query retrieval pilot with all five policies, using the cached Qwen model
+offline. It saves prompts, token IDs, scores, cache audits and a readable report.
+The 50%/25% budgets apply to retained context, with question tokens appended
+afterwards. This is not the continuous-generation or long-context benchmark.
+See [pilot instructions and limitations](docs/EVALUATION_PILOT.md).
+
+For the separately versioned, position/label-balanced chat pilot, use
+`uv run --frozen --group dev python -m amt.evaluation --dataset-version v2 --examples 32 --seed 20260920`.
+Its settings are declared in [the v2 development protocol](research/pilot_v2_protocol.md).
+
 ## ⚠️ Current limitations
 
 This repository has a reproducible full-cache baseline and deterministic fixed
 policy utilities. It does not yet establish that adaptive compression improves
 quality, memory, or latency. In particular:
 
-- Position-correct compressed decoding has not been implemented yet; it is the
-  next correctness milestone.
+- Full-retention equivalence is validated on tiny GPT-2 models and pinned
+  Qwen2.5-1.5B in BF16 on Apple M1 MPS.
+- Position-correct Qwen2 compressed decoding is implemented for one unpadded
+  sequence with shared retention across layers. See the
+  [Day 3 walkthrough](docs/POSITION_CORRECT_CACHE.md).
+- Compressed-cache semantics are validated on tiny Qwen models and pinned
+  Qwen2.5-1.5B in CPU float32 with documented cross-shape numerical tolerances.
+  BF16 compressed-cache equivalence remains unqualified; the Day 2 BF16 result
+  applies only to full retention. See [numerical evidence](docs/NUMERICAL_TOLERANCES.md).
+- The correctness runner uses explicit masks and full prefill; it is not yet
+  the long-context memory/latency benchmark pipeline.
+- Minimal attention-only and attention-plus-recency policies are implemented.
+  Attention collection requires eager attention and has unmeasured overhead.
+  History/EMA is deferred. See the [Part 4 walkthrough](docs/ADAPTIVE_SELECTION.md)
+  and [scope decisions](research/deviations.md).
 - No benchmark result or statistical conclusion is reported here.
 - Model and context coverage will initially be limited by available hardware.
 - Analytical KV size does not equal end-to-end peak GPU memory.

@@ -8,7 +8,7 @@ import time
 import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Mapping, Sequence, cast
+from typing import Callable, Mapping, Sequence, cast
 
 from amt.baseline import DEFAULT_MODEL, BaselineResult, run_full_cache_baseline
 
@@ -182,4 +182,5 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return int(args.handler(args))
+    handler = cast(Callable[[argparse.Namespace], int], args.handler)
+    return handler(args)

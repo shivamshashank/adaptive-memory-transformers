@@ -93,7 +93,7 @@ def summarize_records(results: list[BaselineRecord]) -> Summary:
     """Group baseline records by prompt length and compute descriptive statistics."""
     by_prompt: dict[int, list[BaselineRecord]] = {}
     for result in results:
-        prompt_tokens = int(result["prompt_tokens"])
+        prompt_tokens = result["prompt_tokens"]
         by_prompt.setdefault(prompt_tokens, []).append(result)
 
     rows: list[SummaryRow] = []
@@ -113,7 +113,7 @@ def summarize_records(results: list[BaselineRecord]) -> Summary:
             "decode_tokens_per_second": _stats(
                 [float(run["decode_tokens_per_second"]) for run in runs]
             ),
-            "seed_values": [int(run["seed"]) for run in runs],
+            "seed_values": [run["seed"] for run in runs],
         }
         rows.append(row)
 
