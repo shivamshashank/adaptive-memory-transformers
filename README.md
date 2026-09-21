@@ -21,7 +21,10 @@ The research question is not *"can KV-cache compression save memory?"* It is:
 ![Transformers](https://img.shields.io/badge/Hugging%20Face-Transformers-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black)
 ![License](https://img.shields.io/github/license/shivamshashank/adaptive-memory-transformers?style=flat-square)
 
-**Status:** CPU cache correctness and direct-color task calibrated · two-pass query-aware selection advanced on development data (10/14 full-correct vs 8/14 context-adaptive and 7/14 recency) · larger predeclared development run next · no superiority or speedup claims
+**Status:** CPU cache correctness and direct-color task calibrated · query-aware
+selection remained stronger in a larger two-seed development run, but the
+predeclared full-context calibration gate failed · confirmation seed remains
+untouched · diagnosis next · no superiority or speedup claims
 
 </div>
 
@@ -31,6 +34,7 @@ The research question is not *"can KV-cache compression save memory?"* It is:
 
 Completed diagnosis: [modest longer-context matched-budget experiment](docs/LONG_CONTEXT_EXPERIMENT.md).
 Current milestone: [two-pass query-aware selection](docs/QUERY_AWARE_EXPERIMENT.md).
+Larger validation: [multi-seed query-aware development run](docs/QUERY_AWARE_LARGER.md).
 Calibrated task: [direct-color task calibration](docs/DIRECT_COLOR_CALIBRATION.md).
 Why it is required: [retrieval reliability findings](docs/RETRIEVAL_RELIABILITY.md).
 Completed experiment: [protected-first-token ablation](docs/PROTECTED_PREFIX_ABLATION.md).
