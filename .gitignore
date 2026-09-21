@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Experiment outputs
+results/
+
+# Local model artifacts
+.model-cache/
+
+# macOS
+.DS_Store
+
+# Editor settings
+.vscode/
+.idea/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Understand Anything
+.ua/
+
+# Local review material (may contain personal documents)
+tmp/
+audit_report_20260919/

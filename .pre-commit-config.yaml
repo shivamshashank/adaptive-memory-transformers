@@ -1,0 +1,53 @@
+minimum_pre_commit_version: "4.3.0"
+
+repos:
+  - repo: local
+    hooks:
+      - id: lockfile
+        name: lockfile is current
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: compile
+        name: Python sources compile
+        entry: uv run --frozen python -m compileall -q src tests scripts
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: cli
+        name: CLI starts
+        entry: uv run --frozen amt --help
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff-format
+        name: Ruff formatting
+        entry: uv run --frozen ruff format --check src tests scripts
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff-lint
+        name: Ruff lint
+        entry: uv run --frozen ruff check src tests scripts
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: mypy
+        name: MyPy
+        entry: uv run --frozen mypy
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: pytest
+        name: Pytest
+        entry: uv run --frozen pytest
+        language: system
+        pass_filenames: false
+        always_run: true

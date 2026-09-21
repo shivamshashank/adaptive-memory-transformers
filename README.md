@@ -19,11 +19,9 @@ The research question is not *"can KV-cache compression save memory?"* It is:
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
 ![Transformers](https://img.shields.io/badge/Hugging%20Face-Transformers-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black)
-![NumPy](https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white)
-![SciPy](https://img.shields.io/badge/SciPy-8CAAE6?style=for-the-badge&logo=scipy&logoColor=white)
 ![License](https://img.shields.io/github/license/shivamshashank/adaptive-memory-transformers?style=flat-square)
 
-**Status:** research planning and design stage · implementation and results not yet reported
+**Status:** Part 4 attention/recency selection validated in CPU float32 · matched-budget evaluation next · no compression quality or speedup claims
 
 </div>
 
@@ -180,7 +178,7 @@ flowchart LR
 ### Languages
 
 - **Python 3.11+** for models, experiments, evaluation, analysis, and figures.
-- **YAML/JSON** for experiment configuration and machine-readable outputs.
+- **TOML/JSON** for experiment configuration and machine-readable outputs.
 - **Markdown** for research notes, methods, and reproducibility documentation.
 
 ### Core ML and numerical tools
@@ -209,53 +207,25 @@ the portfolio and are not needed for this research question.
 
 ## 📂 Target repository structure
 
-The repository currently contains the project documentation and contribution
-policies. The following is the intended structure as implementation proceeds;
-entries marked planned are not yet present.
-
-```text
-configs/
-	baseline.yaml              Reproducible baseline configuration
-
-src/
-	models/                    Model loading and KV-cache accounting
-	cache/                     Cache interfaces and policies (planned)
-	compression/               Compression implementations (planned)
-	importance/                Attention, recency, and frequency signals (planned)
-	evaluation/                Inference and benchmark measurement code
-	utils/                     Configuration and reproducibility helpers
-
-experiments/
-	baseline/                  Baseline measurements
-	importance/                Importance analysis
-	compression/               Policy comparisons
-	ablations/                 Signal and allocation ablations
-	generalization/            Models, tasks, and context-length transfer
-
-scripts/                     Reproducible command-line entry points
-results/                     Raw generated outputs
-figures/                     Generated plots and paper figures
-paper/                       Manuscript, figures, and references (planned)
-phases.md                    Ten-phase research and implementation plan
-
-README.md                    Project overview and reproducibility contract
-requirements.txt             Python dependencies (planned)
-environment.yml              Conda environment specification (planned)
-pyproject.toml               Python package metadata (planned)
-```
+The current directory tree, file responsibilities, inputs, outputs, and
+execution entry points are documented in
+[docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md).
 
 ## ⚡ Implementation quick start
 
-There is no runnable inference harness in the repository yet. The first
-implementation milestone will add the Python package, baseline configuration,
-and `scripts/run_baseline.py`. Once those files exist, the intended setup is:
+The initial full-cache inference harness is available. The locked development
+environment is the canonical setup:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r requirements.txt
-PYTHONPATH=. python3 scripts/run_baseline.py --config configs/baseline.yaml
+python3 -m pip install uv==0.11.26
+uv sync --frozen --group dev
+uv run amt baseline --config configs/smoke/v1.toml
 ```
+
+`pyproject.toml` is the single dependency declaration and `uv.lock` pins the
+complete environment. The immutable CPU smoke configuration is in
+`configs/smoke/v1.toml`; the frozen research contract is in
+`research/protocol_v1.md`.
 
 The planned baseline will record prompt length, generated length, prefill and
 decode time, decode throughput, estimated KV-cache bytes, device, and peak GPU
@@ -264,7 +234,8 @@ will not be hand-edited.
 
 ## 🔬 Experiments
 
-The experiment sequence is documented in [phases.md](phases.md). In brief:
+The experiment sequence is documented in
+[10_phase_phd_roadmap.md](10_phase_phd_roadmap.md). In brief:
 
 1. Literature review and gap definition.
 2. Full-cache inference harness.
@@ -293,13 +264,28 @@ The experiment sequence is documented in [phases.md](phases.md). In brief:
 Testing is layered because this is both a research codebase and a numerical
 measurement project.
 
-### Planned fast checks
+### Fast checks
 
 ```bash
-python3 -m compileall -q src scripts
-PYTHONPATH=. python3 scripts/run_baseline.py --help
+uv run python -m compileall -q src
+uv run amt --help
+uv run ruff format --check src tests
+uv run ruff check src tests
+uv run mypy
+uv run pytest
+uv run pre-commit run --all-files
 git diff --check
 ```
+
+The offline test suite constructs a tiny GPT-2 model locally. An optional test
+also validates the decoding oracle against the immutable downloaded smoke model:
+
+```bash
+AMT_RUN_MODEL_INTEGRATION=1 uv run pytest tests/test_decoding.py
+```
+
+The declared dtype tolerances and the exact equivalence contract are documented
+in [docs/NUMERICAL_TOLERANCES.md](docs/NUMERICAL_TOLERANCES.md).
 
 ### Planned unit tests
 
@@ -328,21 +314,61 @@ the result metadata.
 
 | Document | Purpose |
 |---|---|
-| [phases.md](phases.md) | Ten-phase plan, deliverables, experiments, and exit criteria |
+| [10_phase_phd_roadmap.md](10_phase_phd_roadmap.md) | Research roadmap, deliverables, experiments, and exit criteria |
 | [README.md](README.md) | Project scope, architecture, stack, and reproducibility contract |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution workflow and repository standards |
 | [SECURITY.md](SECURITY.md) | Responsible security disclosure |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community expectations |
+| [research/protocol_v1.md](research/protocol_v1.md) | Frozen hypotheses, comparisons, metrics, and exclusion rules |
+| [docs/PHD_CV_10_DAY_CHECKLIST.md](docs/PHD_CV_10_DAY_CHECKLIST.md) | Ten-day implementation and validation checklist |
 
 Planned research documents include a literature matrix, preregistered
 evaluation protocol, experiment log, failure-analysis report, and manuscript.
 
+## Validation reports
+
+See [PR scope, compatibility changes and follow-ups](docs/PR_SCOPE.md) for the
+current research-prototype boundary. Tracked pilot summaries are descriptive
+negative results, not evidence of adaptive superiority.
+
+To save tests, logs and model input/output traces in one timestamped folder, run
+`uv run --frozen --group dev python -m amt.validation`. Add `--qwen` for the
+cached primary model. See [validation report instructions](docs/VALIDATION_REPORTS.md).
+
+## CPU development evaluator
+
+`uv run --frozen --group dev python -m amt.evaluation` runs a 20-example
+delayed-query retrieval pilot with all five policies, using the cached Qwen model
+offline. It saves prompts, token IDs, scores, cache audits and a readable report.
+The 50%/25% budgets apply to retained context, with question tokens appended
+afterwards. This is not the continuous-generation or long-context benchmark.
+See [pilot instructions and limitations](docs/EVALUATION_PILOT.md).
+
+For the separately versioned, position/label-balanced chat pilot, use
+`uv run --frozen --group dev python -m amt.evaluation --dataset-version v2 --examples 32 --seed 20260920`.
+Its settings are declared in [the v2 development protocol](research/pilot_v2_protocol.md).
+
 ## ⚠️ Current limitations
 
-This repository is at the research-planning stage. It does not yet establish
-that adaptive compression improves quality, memory, or latency. In particular:
+This repository has a reproducible full-cache baseline and deterministic fixed
+policy utilities. It does not yet establish that adaptive compression improves
+quality, memory, or latency. In particular:
 
-- No compression policy has been validated yet.
+- Full-retention equivalence is validated on tiny GPT-2 models and pinned
+  Qwen2.5-1.5B in BF16 on Apple M1 MPS.
+- Position-correct Qwen2 compressed decoding is implemented for one unpadded
+  sequence with shared retention across layers. See the
+  [Day 3 walkthrough](docs/POSITION_CORRECT_CACHE.md).
+- Compressed-cache semantics are validated on tiny Qwen models and pinned
+  Qwen2.5-1.5B in CPU float32 with documented cross-shape numerical tolerances.
+  BF16 compressed-cache equivalence remains unqualified; the Day 2 BF16 result
+  applies only to full retention. See [numerical evidence](docs/NUMERICAL_TOLERANCES.md).
+- The correctness runner uses explicit masks and full prefill; it is not yet
+  the long-context memory/latency benchmark pipeline.
+- Minimal attention-only and attention-plus-recency policies are implemented.
+  Attention collection requires eager attention and has unmeasured overhead.
+  History/EMA is deferred. See the [Part 4 walkthrough](docs/ADAPTIVE_SELECTION.md)
+  and [scope decisions](research/deviations.md).
 - No benchmark result or statistical conclusion is reported here.
 - Model and context coverage will initially be limited by available hardware.
 - Analytical KV size does not equal end-to-end peak GPU memory.
@@ -360,7 +386,7 @@ changes narrow and preserve raw outputs and negative findings.
 
 ```bash
 git checkout -b research/short-description
-python3 -m compileall -q src scripts
+uv run python -m compileall -q src
 git diff --check
 git commit -m "research: describe experiment"
 ```

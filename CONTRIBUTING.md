@@ -23,65 +23,65 @@ By participating in this project, you agree to abide by our
 
 ## Development Setup
 
-The planned implementation uses **Python**, **PyTorch**, and Hugging Face
-**Transformers**. The repository is currently documentation-only, so these
-commands describe the intended setup once implementation is added.
+The implementation uses **Python**, **PyTorch**, and Hugging Face
+**Transformers**. Dependency resolution and developer commands are managed by
+`uv` using the committed lockfile.
 
 Prerequisites:
 
 - Python 3.11 or newer
-- A virtual environment or Conda environment
+- `uv` 0.11.26
 - PyTorch and Transformers
 - An NVIDIA CUDA GPU for performance experiments, where available
 - CPU support for unit tests and small smoke tests
 
-When `requirements.txt` is available, the intended setup is:
+Create the exact locked development environment with:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r requirements.txt
+python3 -m pip install uv==0.11.26
+uv sync --frozen --group dev
 ```
+
+`pyproject.toml` is the single dependency declaration and `uv.lock` is the
+committed resolution used by development and CI.
 
 ## Working on Code and Experiments
 
 Keep changes narrow and preserve the research boundary:
 
-- `src/cache/`: Cache interfaces and retention policies.
-- `src/compression/`: Compression implementations.
-- `src/importance/`: Attention, recency, and frequency signals.
-- `src/evaluation/`: Measurement and benchmark harnesses.
+- `src/amt/`: Installable research package and command-line interface.
 - `configs/`: Versioned experiment configurations.
-- `experiments/`: Experiment-specific runners and analysis.
 - `results/`: Raw generated outputs; do not hand-edit them.
-- `figures/`: Reproducible generated figures.
+- `tests/`: Fast deterministic checks that do not require a model download.
 
 For experiment changes, record the model revision, dataset or prompt source,
 seed, dtype, hardware, cache budget, metrics, and result location.
 
 ## Formatting, Linting, and Validation
 
-Run the checks supported by the implementation:
+Run the complete local quality gate:
 
 ```bash
-python3 -m compileall -q src scripts
-PYTHONPATH=. python3 scripts/run_baseline.py --help
+uv run python -m compileall -q src
+uv run amt --help
+uv run ruff format --check src tests
+uv run ruff check src tests
+uv run mypy
+uv run pytest
+uv run pre-commit run --all-files
 git diff --check
 ```
-
-When formatting and linting tools are introduced, document their versions and
-commands here and pin them where practical.
 
 ## Testing
 
 Code changes should include focused unit or integration tests. Research changes
 should also include the configuration and raw output needed to inspect them.
 
-Planned commands:
+Commands:
 
 ```bash
-python3 -m pytest -q
-python3 -m pytest --cov=src -q
+uv run pytest
+uv run pytest --cov=src --cov-report=term-missing
 ```
 
 Planned test coverage includes KV-cache byte calculations across MHA, GQA, and
@@ -101,7 +101,8 @@ benchmark result.
 - Preserve failed runs and negative findings.
 - Report selection overhead rather than hiding it in implementation details.
 - Do not claim novelty, generality, or speedups without evidence.
-- Update [phases.md](phases.md) when the research plan materially changes.
+- Update [10_phase_phd_roadmap.md](10_phase_phd_roadmap.md) when the research
+  plan materially changes.
 
 ## Commit Guidelines
 
