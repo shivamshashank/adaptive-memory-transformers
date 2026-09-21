@@ -21,13 +21,21 @@ The research question is not *"can KV-cache compression save memory?"* It is:
 ![Transformers](https://img.shields.io/badge/Hugging%20Face-Transformers-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black)
 ![License](https://img.shields.io/github/license/shivamshashank/adaptive-memory-transformers?style=flat-square)
 
-**Status:** Part 4 attention/recency selection validated in CPU float32 · matched-budget evaluation next · no compression quality or speedup claims
+**Status:** CPU cache correctness and direct-color task calibrated · two-pass query-aware selection advanced on development data (10/14 full-correct vs 8/14 context-adaptive and 7/14 recency) · larger predeclared development run next · no superiority or speedup claims
 
 </div>
 
 ---
 
 ## 📌 Overview
+
+Completed diagnosis: [modest longer-context matched-budget experiment](docs/LONG_CONTEXT_EXPERIMENT.md).
+Current milestone: [two-pass query-aware selection](docs/QUERY_AWARE_EXPERIMENT.md).
+Calibrated task: [direct-color task calibration](docs/DIRECT_COLOR_CALIBRATION.md).
+Why it is required: [retrieval reliability findings](docs/RETRIEVAL_RELIABILITY.md).
+Completed experiment: [protected-first-token ablation](docs/PROTECTED_PREFIX_ABLATION.md).
+Previous evidence: [v2 findings](docs/PILOT_V2_FINDINGS.md) and
+[diagnosis checklist](docs/V2_DIAGNOSIS_CHECKLIST.md).
 
 During autoregressive decoding, a Transformer stores keys and values for past
 tokens so that every new token can attend to previous context without

@@ -8,6 +8,7 @@ the total processed length, never the compressed cache length.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Literal
 
 import torch
 from transformers import Qwen2ForCausalLM
@@ -41,7 +42,13 @@ class Qwen2CacheAdapter:
         self.attention_by_layer: tuple[tuple[float, ...], ...] = ()
 
     @torch.inference_mode()
-    def forward(self, input_ids: torch.Tensor, *, collect_attention: bool = False) -> torch.Tensor:
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        *,
+        collect_attention: bool = False,
+        attention_query_reduction: Literal["last", "mean"] = "last",
+    ) -> torch.Tensor:
         """Append tokens at original positions and return logits for each query.
 
         The first call prefills the prompt. Later calls append a token or chunk.
@@ -51,6 +58,8 @@ class Qwen2CacheAdapter:
             raise ValueError("input_ids must have shape [1, nonempty sequence]")
         if input_ids.dtype != torch.long:
             raise ValueError("input_ids must have dtype torch.long")
+        if attention_query_reduction not in ("last", "mean"):
+            raise ValueError("Attention query reduction must be 'last' or 'mean'")
         if collect_attention and self.model.config._attn_implementation != "eager":
             raise ValueError(
                 "Attention collection requires eager attention; load the model explicitly"
@@ -81,10 +90,13 @@ class Qwen2CacheAdapter:
         if collect_attention:
             if output.attentions is None or len(output.attentions) != len(self.cache.layers):
                 raise RuntimeError("Model did not return attention for every layer")
-            self.attention_by_layer = tuple(
-                tuple(weights[0, :, -1, :].float().mean(dim=0).cpu().tolist())
-                for weights in output.attentions
-            )
+            if attention_query_reduction == "last":
+                reduced = (
+                    weights[0, :, -1, :].float().mean(dim=0) for weights in output.attentions
+                )
+            else:
+                reduced = (weights[0].float().mean(dim=(0, 1)) for weights in output.attentions)
+            self.attention_by_layer = tuple(tuple(scores.cpu().tolist()) for scores in reduced)
         return output.logits
 
     @torch.inference_mode()

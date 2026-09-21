@@ -1,4 +1,7 @@
-# PR scope: validated KV-cache research prototype
+# Merged PR #1 scope: validated KV-cache research prototype
+
+This document records the previous PR. The next PR's scope and checklist are in
+[Protected first-token ablation](PROTECTED_PREFIX_ABLATION.md).
 
 This PR delivers cache correctness, reproducible development evaluation and
 diagnostics. It does NOT establish adaptive superiority or publication readiness.

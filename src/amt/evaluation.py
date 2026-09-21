@@ -93,7 +93,9 @@ def tokenize_example(tokenizer: Any, example: dict[str, Any], version: str) -> d
     else:
         content = example["context"] + example["query"]
         text = tokenizer.apply_chat_template(
-            [{"role": "user", "content": content}], tokenize=False, add_generation_prompt=True
+            [{"role": "user", "content": content}],
+            tokenize=False,
+            add_generation_prompt=True,
         )
         if text.count(content) != 1:
             raise ValueError("Chat template does not preserve the unique user content")
@@ -142,6 +144,12 @@ def summarize(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "n": len(group),
                 "correct": sum(row["correct"] for row in group),
                 "accuracy": sum(row["correct"] for row in group) / len(group),
+                "valid_next_tokens": sum(
+                    row.get("raw_greedy_text", "").strip() in ("A", "B", "C", "D") for row in group
+                ),
+                "raw_next_correct": sum(
+                    row.get("raw_greedy_text", "").strip() == row.get("gold") for row in group
+                ),
                 "full_correct_n": len(reference_correct),
                 "accuracy_on_full_correct": (
                     sum(row["correct"] for row in reference_correct) / len(reference_correct)
@@ -156,8 +164,35 @@ def summarize(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return summaries
 
 
+def paired_changes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pair by example AND base policy, never by list order; partial pairs omitted."""
+    lookup = {(r["example_id"], r["policy"], r["ratio"]): r for r in rows}
+    pairs = []
+    for row in rows:
+        if not row["policy"].endswith("+first"):
+            continue
+        base = row["policy"].removesuffix("+first")
+        off = lookup.get((row["example_id"], base, row["ratio"]))
+        if off is None:
+            continue
+        valid_off = off["raw_greedy_text"].strip() in ("A", "B", "C", "D")
+        valid_on = row["raw_greedy_text"].strip() in ("A", "B", "C", "D")
+        pairs.append(
+            {
+                "example_id": row["example_id"],
+                "policy": base,
+                "ratio": row["ratio"],
+                "validity_delta": int(valid_on) - int(valid_off),
+                "accuracy_delta": int(row["correct"]) - int(off["correct"]),
+                "selection_unchanged": row["retained_positions"] == off["retained_positions"],
+            }
+        )
+    return pairs
+
+
 def save_report(output: Path, rows: list[dict[str, Any]], expected: int, status: str) -> None:
     summary = summarize(rows)
+    write_json(output / "paired_changes.json", paired_changes(rows))
     write_json(
         output / "summary.json",
         {
@@ -176,14 +211,14 @@ def save_report(output: Path, rows: list[dict[str, Any]], expected: int, status:
         "",
         "Read facts → prune context cache → append question → score A/B/C/D.",
         "",
-        "| Policy | Context budget | Correct / N | Accuracy | Mean retained KV bytes |",
-        "| --- | ---: | ---: | ---: | ---: |",
+        "| Policy | Context budget | Correct / N | Accuracy | Valid next letters | Mean retained KV bytes |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
     ]
     for item in summary:
         ratio = "full" if item["ratio"] is None else f"{item['ratio']:.0%}"
         lines.append(
             f"| {item['policy']} | {ratio} | {item['correct']}/{item['n']} | "
-            f"{item['accuracy']:.1%} | {item['mean_retained_kv_bytes']:.0f} |"
+            f"{item['accuracy']:.1%} | {item['valid_next_tokens']}/{item['n']} | {item['mean_retained_kv_bytes']:.0f} |"
         )
     lines += [
         "",
@@ -197,7 +232,10 @@ def save_report(output: Path, rows: list[dict[str, Any]], expected: int, status:
         "without pruning for scoring, equally for all policies. KV bytes are not peak RAM.",
         "Attention selection uses the last context token, without seeing the future question.",
         "Runtime includes instrumentation and is not a speed benchmark. Full cache runs once",
-        "per example; adaptive weights are fixed 0.5 attention / 0.5 recency, no protections.",
+        "per example; adaptive weights are fixed 0.5 attention / 0.5 recency.",
+        "Policies suffixed +first apply the declared first-token minimal swap, inside the budget.",
+        "Next-letter validity is not the validity of a multi-token completion. Paired deltas are",
+        "saved in paired_changes.json; partial runs may not contain every pair.",
         "",
         "## Evidence",
         "",
@@ -216,9 +254,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--examples", type=int, default=20)
     parser.add_argument("--seed", type=int, default=20260919)
     parser.add_argument("--dataset-version", choices=("v1", "v2"), default="v1")
+    parser.add_argument(
+        "--prefix-ablation",
+        action="store_true",
+        help="Frozen v2 off/on first-token experiment",
+    )
     parser.add_argument("--ratios", type=float, nargs="+", default=[0.5, 0.25])
     parser.add_argument("--output-dir", type=Path, default=Path("results/evaluation"))
     args = parser.parse_args(argv)
+    if args.prefix_ablation and (
+        args.dataset_version != "v2"
+        or args.examples != 32
+        or args.seed != 20260920
+        or args.ratios != [0.5]
+    ):
+        parser.error("Prefix ablation requires v2, 32 examples, seed 20260920 and --ratios 0.5")
     if args.dataset_version == "v2" and args.examples % 32:
         parser.error("v2 requires --examples to be a positive multiple of 32")
     if (
@@ -234,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
     output.mkdir(parents=True, exist_ok=False)
     print(f"Pilot report: {output / 'report.md'}", flush=True)
     rows: list[dict[str, Any]] = []
-    expected = args.examples * (1 + 4 * len(args.ratios))
+    expected = args.examples * (1 + 4 * len(args.ratios) * (2 if args.prefix_ablation else 1))
     save_report(output, rows, expected, "running")
     os.environ.update(
         {
@@ -246,6 +296,12 @@ def main(argv: list[str] | None = None) -> int:
     snapshot_sources(root, output)
     data = make_examples(args.examples, args.seed, args.dataset_version)
     write_json(output / "dataset.json", data)
+    dataset_hash = hashlib.sha256((output / "dataset.json").read_bytes()).hexdigest()
+    if (
+        args.prefix_ablation
+        and dataset_hash != "4677b328abbb80e0eed87a32f0c3d1285d8d55d2055438fe7c7e7e385ec1224e"
+    ):
+        raise ValueError("Frozen ablation dataset hash changed")
     model_id = "Qwen/Qwen2.5-1.5B-Instruct"
     revision = "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
     write_json(
@@ -258,6 +314,10 @@ def main(argv: list[str] | None = None) -> int:
             "expected_evaluations": expected,
             "split": "development",
             "dataset_version": args.dataset_version,
+            "prefix_ablation": args.prefix_ablation,
+            "protection_rule": (
+                "swap-oldest-selected-for-position-zero-v1" if args.prefix_ablation else None
+            ),
             "prompt_format": "chat" if args.dataset_version == "v2" else "plain",
             "scoring": "argmax over single-token bare A/B/C/D; ties prefer first label",
             "device": "cpu",
@@ -268,9 +328,14 @@ def main(argv: list[str] | None = None) -> int:
             "versions": {
                 name: importlib.metadata.version(name) for name in ("torch", "transformers")
             },
-            "dataset_sha256": hashlib.sha256((output / "dataset.json").read_bytes()).hexdigest(),
+            "dataset_sha256": dataset_hash,
             "policy_settings": {
-                "adaptive": {"attention": 0.5, "recency": 0.5, "sink_tokens": 0, "local_window": 0}
+                "adaptive": {
+                    "attention": 0.5,
+                    "recency": 0.5,
+                    "sink_tokens": 0,
+                    "local_window": 0,
+                }
             },
         },
     )
@@ -284,7 +349,12 @@ def main(argv: list[str] | None = None) -> int:
                 from transformers import AutoTokenizer, Qwen2ForCausalLM
 
                 from amt.cache import Qwen2CacheAdapter
-                from amt.policies import AttentionRecencyPolicy, RetentionSignals, create_policy
+                from amt.policies import (
+                    FirstTokenProtectedPolicy,
+                    RetentionSignals,
+                    create_policy,
+                    policy_requires_attention,
+                )
 
                 torch.manual_seed(args.seed)
                 tokenizer = AutoTokenizer.from_pretrained(
@@ -292,6 +362,8 @@ def main(argv: list[str] | None = None) -> int:
                     revision=revision,
                     local_files_only=True,
                 )
+                if tokenizer is None:
+                    raise RuntimeError(f"Failed to load tokenizer for {model_id}")
                 model = Qwen2ForCausalLM.from_pretrained(
                     model_id,
                     revision=revision,
@@ -307,26 +379,32 @@ def main(argv: list[str] | None = None) -> int:
                     tokenize_example(tokenizer, example, args.dataset_version) for example in data
                 ]
                 write_json(
-                    output / "inputs.json", {"examples": tokenized, "choice_ids": choice_ids}
+                    output / "inputs.json",
+                    {"examples": tokenized, "choice_ids": choice_ids},
                 )
                 with (
                     torch.inference_mode(),
                     (output / "rows.jsonl").open("w", buffering=1) as handle,
                 ):
                     for example, tokens in zip(data, tokenized):
-                        settings: list[tuple[str, float | None]] = [("full", None)]
+                        settings: list[tuple[str, float | None, bool]] = [("full", None, False)]
                         settings += [
-                            (name, ratio)
+                            (name, ratio, protected)
                             for ratio in args.ratios
                             for name in ("recency", "uniform", "attention", "adaptive")
+                            for protected in ((False, True) if args.prefix_ablation else (False,))
                         ]
-                        for name, ratio in settings:
+                        for name, ratio, protected in settings:
                             started = time.perf_counter()
                             adapter = Qwen2CacheAdapter(model)
                             policy = create_policy(name)
-                            collect = isinstance(policy, AttentionRecencyPolicy)
+                            if protected:
+                                policy = FirstTokenProtectedPolicy(policy)
+                            policy_name = policy.name
+                            collect = policy_requires_attention(policy)
                             adapter.forward(
-                                torch.tensor([tokens["context_ids"]]), collect_attention=collect
+                                torch.tensor([tokens["context_ids"]]),
+                                collect_attention=collect,
                             )
                             budget = (
                                 len(tokens["context_ids"])
@@ -342,6 +420,11 @@ def main(argv: list[str] | None = None) -> int:
                                 )
                             )
                             retained = adapter.positions
+                            if args.prefix_ablation and (
+                                len(tokens["context_ids"]) != 82
+                                or (ratio is not None and budget != 41)
+                            ):
+                                raise ValueError("Frozen context length/budget changed")
                             kv_bytes = audit_cache(adapter, budget)
                             # Query is deliberately unseen until AFTER context pruning.
                             logits = adapter.forward(torch.tensor([tokens["query_ids"]]))[0, -1]
@@ -360,7 +443,8 @@ def main(argv: list[str] | None = None) -> int:
                                 del dense
                             row = {
                                 "example_id": example["id"],
-                                "policy": name,
+                                "policy": policy_name,
+                                "first_token_protected": protected,
                                 "ratio": ratio,
                                 "gold": example["gold"],
                                 **score_choices(scores, example["gold"]),
@@ -382,7 +466,7 @@ def main(argv: list[str] | None = None) -> int:
                             rows.append(row)
                             save_report(output, rows, expected, "running")
                             print(
-                                f"{len(rows)}/{expected}: {example['id']} {name} {ratio}: "
+                                f"{len(rows)}/{expected}: {example['id']} {policy_name} {ratio}: "
                                 f"pred={row['prediction']} gold={row['gold']} seconds={row['seconds']:.2f}",
                                 flush=True,
                             )

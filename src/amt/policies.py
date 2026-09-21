@@ -215,6 +215,65 @@ def create_policy(name: str) -> CachePolicy:
         raise ValueError(f"Unsupported cache policy: {name}") from exc
 
 
+@dataclass(frozen=True)
+class FirstTokenProtectedPolicy:
+    """Minimal swap, not extra capacity: keep original position zero in a budget.
+
+    If already retained, leave the base selection unchanged. Otherwise replace
+    its oldest selected position. Off delegates exactly. Attention collection
+    is the caller's responsibility and must follow the underlying policy.
+    """
+
+    base: CachePolicy
+    enabled: bool = True
+
+    @property
+    def name(self) -> str:
+        return self.base.name + ("+first" if self.enabled else "")
+
+    def select_indices(
+        self,
+        total_tokens: int,
+        budget_tokens: int,
+        *,
+        recent_window: int | None = None,
+        signals: RetentionSignals | None = None,
+    ) -> list[int]:
+        if self.enabled and self.base.name == "full":
+            raise ValueError("First-token protection is for compressed policies only")
+        selected = self.base.select_indices(
+            total_tokens, budget_tokens, recent_window=recent_window, signals=signals
+        )
+        if not self.enabled:
+            return selected
+        if len(selected) != min(max(total_tokens, 0), max(budget_tokens, 0)):
+            raise ValueError("Base policy must fill exactly the assigned capacity")
+        if not selected:
+            return selected
+        if signals is None or len(signals.positions) != total_tokens:
+            raise ValueError("Aligned original positions are required")
+        positions = signals.positions
+        if any(not isinstance(p, int) or isinstance(p, bool) or p < 0 for p in positions) or any(
+            a >= b for a, b in zip(positions, positions[1:])
+        ):
+            raise ValueError("Original positions must be nonnegative, sorted and unique")
+        if 0 not in positions:
+            raise ValueError("Original position zero was already evicted")
+        if len(set(selected)) != len(selected) or any(i < 0 or i >= total_tokens for i in selected):
+            raise ValueError("Base selection must contain unique valid cache slots")
+        first = positions.index(0)
+        if first in selected:
+            return selected
+        oldest = min(selected, key=positions.__getitem__)
+        return sorted(first if i == oldest else i for i in selected)
+
+
+def policy_requires_attention(policy: CachePolicy) -> bool:
+    if isinstance(policy, FirstTokenProtectedPolicy):
+        return policy_requires_attention(policy.base)
+    return isinstance(policy, AttentionRecencyPolicy) and policy.attention_weight > 0
+
+
 def budget_tokens_for_ratio(total_tokens: int, ratio: float) -> int:
     if total_tokens <= 0:
         return 0

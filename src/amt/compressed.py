@@ -8,7 +8,7 @@ from transformers import Qwen2ForCausalLM
 
 from amt.cache import Qwen2CacheAdapter
 from amt.decoding import DecodeTrace, _InspectableCache, snapshot_cache
-from amt.policies import AttentionRecencyPolicy, CachePolicy, RetentionSignals
+from amt.policies import CachePolicy, RetentionSignals, policy_requires_attention
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ def run_compressed_greedy_decode(
     logits_history = []
     snapshots = []
     positions = []
-    collect_attention = isinstance(policy, AttentionRecencyPolicy) and policy.attention_weight > 0
+    collect_attention = policy_requires_attention(policy)
     for _ in range(max_new_tokens):
         logits = adapter.forward(current_input, collect_attention=collect_attention)[:, -1, :]
         logits_history.append(logits.detach().clone())

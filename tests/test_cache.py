@@ -257,6 +257,12 @@ def assert_attention_collection_and_generation(model: Qwen2ForCausalLM) -> None:
         torch.testing.assert_close(
             torch.tensor(scores), weights[0, :, -1, :].float().mean(0).cpu(), atol=1e-6, rtol=1e-5
         )
+    mean_adapter = Qwen2CacheAdapter(model)
+    mean_adapter.forward(ids, collect_attention=True, attention_query_reduction="mean")
+    for scores, weights in zip(mean_adapter.attention_by_layer, expected.attentions, strict=True):
+        torch.testing.assert_close(
+            torch.tensor(scores), weights[0].float().mean((0, 1)).cpu(), atol=1e-6, rtol=1e-5
+        )
     original_scores = adapter.attention_by_layer
     adapter.retain([0, 3, 7])
     assert adapter.attention_by_layer == tuple(
@@ -299,6 +305,12 @@ def test_attention_collection_and_generation(qwen: Qwen2ForCausalLM) -> None:
         assert adapter.positions == ()
     else:
         assert_attention_collection_and_generation(qwen)
+
+
+def test_rejects_unknown_attention_query_reduction(qwen: Qwen2ForCausalLM) -> None:
+    adapter = Qwen2CacheAdapter(qwen)
+    with pytest.raises(ValueError, match="reduction"):
+        adapter.forward(torch.tensor([[1, 2, 3]]), attention_query_reduction="median")  # type: ignore[arg-type]
 
 
 @pytest.mark.model_download
