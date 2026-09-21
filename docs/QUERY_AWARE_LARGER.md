@@ -80,10 +80,14 @@ uv run --frozen --group dev python -m scripts.run_query_aware_larger --verify re
 
 ## Next checklist
 
-- [ ] Inspect the six full-context errors without changing the reserved seed.
-- [ ] Determine whether failures come from prompt ambiguity, token scoring or
-      the small model's retrieval reliability.
-- [ ] Freeze one minimal calibration repair using development data only.
-- [ ] Require the repaired full baseline to pass a new predeclared development
-      gate before considering seed 20261001.
-- [ ] Keep query-probe overhead explicit in every claim and report.
+- [x] Inspect the six full-context errors without changing the reserved seed.
+- [x] Exclude label, token-scoring and cache-path errors; identify small-model
+      retrieval/interference as the remaining empirical failure class.
+- [x] Freeze one minimal exact-lookup prompt repair on fresh development data.
+- [x] Verify the repaired baseline: it failed the unchanged gate at 26/32.
+- [x] Keep seed 20261001 untouched and preserve the negative result.
+- [x] Keep query-probe overhead explicit in every claim and report.
+
+See [the larger full-cache diagnosis](FULL_CACHE_LARGER_DIAGNOSIS.md). The next
+experiment must either predeclare all-example ground-truth accuracy as primary
+on fresh development seeds or separately calibrate a different model/task.
