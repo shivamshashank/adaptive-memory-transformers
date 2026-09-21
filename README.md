@@ -23,8 +23,9 @@ The research question is not *"can KV-cache compression save memory?"* It is:
 
 **Status:** CPU cache correctness and direct-color task calibrated · query-aware
 selection remained stronger in a larger two-seed development run, but the
-predeclared full-context calibration gate failed · confirmation seed remains
-untouched · diagnosis next · no superiority or speedup claims
+predeclared full-context calibration gate failed · one fresh exact-lookup prompt
+repair also failed · confirmation seed remains untouched · no superiority or
+speedup claims
 
 </div>
 
@@ -35,6 +36,7 @@ untouched · diagnosis next · no superiority or speedup claims
 Completed diagnosis: [modest longer-context matched-budget experiment](docs/LONG_CONTEXT_EXPERIMENT.md).
 Current milestone: [two-pass query-aware selection](docs/QUERY_AWARE_EXPERIMENT.md).
 Larger validation: [multi-seed query-aware development run](docs/QUERY_AWARE_LARGER.md).
+Reliability diagnosis: [larger full-cache failures](docs/FULL_CACHE_LARGER_DIAGNOSIS.md).
 Calibrated task: [direct-color task calibration](docs/DIRECT_COLOR_CALIBRATION.md).
 Why it is required: [retrieval reliability findings](docs/RETRIEVAL_RELIABILITY.md).
 Completed experiment: [protected-first-token ablation](docs/PROTECTED_PREFIX_ABLATION.md).
